@@ -1,4 +1,16 @@
 import { useState } from 'react'
+import {
+  Button,
+  Checkbox,
+  Collapse,
+  Group,
+  NumberInput,
+  Select,
+  Stack,
+  Textarea,
+  TextInput,
+  Tooltip,
+} from '@mantine/core'
 import type { GenerationBrief, Mode, Texture } from '../types'
 import { MODES } from '../core/theory'
 import { generateBatch, generateSurpriseBatch } from '../api/generate'
@@ -82,128 +94,109 @@ export function GenerationPanel() {
   }
 
   return (
-    <section className={`gen-panel${open ? '' : ' collapsed'}`}>
+    <section className="gen-panel">
       <div className="panel-head" onClick={() => setOpen(!open)}>
         <span>Generate</span>
         <span className="chevron">{open ? '▾' : '▸'}</span>
       </div>
-      {open && (
-        <div className="panel-body">
-          <div className="field-row">
-            <label title="Tonal center all candidates are written in">
-              key
-              <select value={key} onChange={(e) => setKey(e.target.value)}>
-                {KEYS.map((k) => (
-                  <option key={k}>{k}</option>
-                ))}
-              </select>
-            </label>
-            <label title="Scale flavor: ionian = major, aeolian = natural minor; dorian/mixolydian sit between, phrygian/locrian are darker, lydian brighter">
-              mode
-              <select value={mode} onChange={(e) => setMode(e.target.value as Mode)}>
-                {MODES.map((m) => (
-                  <option key={m}>{m}</option>
-                ))}
-              </select>
-            </label>
-            <label title="BPM stored on each candidate; the transport bar can override during audition">
-              tempo
-              <input
-                type="number"
+      <Collapse expanded={open}>
+        <Stack gap="0.6rem" px="0.8rem" pb="0.8rem">
+          <Group gap="0.75rem" align="flex-end">
+            <Tooltip label="Tonal center all candidates are written in">
+              <Select label="key" w={72} value={key} onChange={(v) => v && setKey(v)} data={KEYS} />
+            </Tooltip>
+            <Tooltip label="Scale flavor: ionian = major, aeolian = natural minor; dorian/mixolydian sit between, phrygian/locrian are darker, lydian brighter">
+              <Select
+                label="mode"
+                w={120}
+                value={mode}
+                onChange={(v) => v && setMode(v as Mode)}
+                data={MODES}
+              />
+            </Tooltip>
+            <Tooltip label="BPM stored on each candidate; the transport bar can override during audition">
+              <NumberInput
+                label="tempo"
+                w={80}
                 min={40}
                 max={220}
                 value={tempo}
-                onChange={(e) => setTempo(Number(e.target.value))}
+                onChange={(v) => setTempo(Number(v) || 100)}
               />
-            </label>
-            <label title="Phrase length in bars of 4/4 — candidates must fill it exactly">
-              bars
-              <select value={bars} onChange={(e) => setBars(Number(e.target.value))}>
-                {[2, 4, 8].map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label title="Lead: one clear melodic line with occasional chords (≤4 voices). Poly: chords, pads, and counterpoint welcome (≤6 voices, up to 4 parts)">
-              texture
-              <select value={texture} onChange={(e) => setTexture(e.target.value as Texture)}>
-                <option value="lead">lead + light harmony</option>
-                <option value="poly">freely polyphonic</option>
-              </select>
-            </label>
-            <label
-              className="check"
-              title="Every candidate includes a drum-kit part (GM percussion) grooving under the melodic material"
-            >
-              <input
-                type="checkbox"
+            </Tooltip>
+            <Tooltip label="Phrase length in bars of 4/4 — candidates must fill it exactly">
+              <Select
+                label="bars"
+                w={64}
+                value={String(bars)}
+                onChange={(v) => v && setBars(Number(v))}
+                data={['2', '4', '8']}
+              />
+            </Tooltip>
+            <Tooltip label="Lead: one clear melodic line with occasional chords (≤4 voices). Poly: chords, pads, and counterpoint welcome (≤6 voices, up to 4 parts)">
+              <Select
+                label="texture"
+                w={180}
+                value={texture}
+                onChange={(v) => v && setTexture(v as Texture)}
+                data={[
+                  { value: 'lead', label: 'lead + light harmony' },
+                  { value: 'poly', label: 'freely polyphonic' },
+                ]}
+              />
+            </Tooltip>
+            <Tooltip label="Every candidate includes a drum-kit part (GM percussion) grooving under the melodic material">
+              <Checkbox
+                className="check"
+                label="rhythm part"
                 checked={includeRhythm}
-                onChange={(e) => setIncludeRhythm(e.target.checked)}
+                onChange={(e) => setIncludeRhythm(e.currentTarget.checked)}
               />
-              rhythm part
-            </label>
-            <label
-              className="check"
-              title="Allow notes outside the chosen key/mode (passing tones, color notes). Off = strictly in-scale; out-of-scale notes only warn, never discard"
-            >
-              <input
-                type="checkbox"
+            </Tooltip>
+            <Tooltip label="Allow notes outside the chosen key/mode (passing tones, color notes). Off = strictly in-scale; out-of-scale notes only warn, never discard">
+              <Checkbox
+                className="check"
+                label="chromatic ok"
                 checked={allowChromatic}
-                onChange={(e) => setAllowChromatic(e.target.checked)}
+                onChange={(e) => setAllowChromatic(e.currentTarget.checked)}
               />
-              chromatic ok
-            </label>
-          </div>
-          <div className="field-row">
-            <label
-              className="grow"
-              title="Song concept / leitmotif tag — candidates are grouped under it in the Concepts view"
-            >
-              concept
-              <input
-                type="text"
-                placeholder="e.g. event horizon"
-                value={concept}
-                onChange={(e) => setConcept(e.target.value)}
-              />
-            </label>
-          </div>
-          <label
-            className="grow"
-            title="Free-text direction: contour, rhythmic character, emotional intent, references — anything the composer should honor"
-          >
-            brief
-            <textarea
+            </Tooltip>
+          </Group>
+          <Tooltip label="Song concept / leitmotif tag — candidates are grouped under it in the Concepts view">
+            <TextInput
+              label="concept"
+              placeholder="e.g. event horizon"
+              value={concept}
+              onChange={(e) => setConcept(e.currentTarget.value)}
+            />
+          </Tooltip>
+          <Tooltip label="Free-text direction: contour, rhythmic character, emotional intent, references — anything the composer should honor">
+            <Textarea
+              label="brief"
               rows={3}
               placeholder="Contour, rhythmic character, emotional intent… e.g. slow rise then collapse, sparse and hollow, dread that resolves too late"
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => setText(e.currentTarget.value)}
             />
-          </label>
-          <div className="field-row">
-            <button
-              className="btn primary"
-              onClick={() => generate(5)}
-              title="Queue one batch of 5 candidates matching the brief"
-            >
-              Generate 5
-            </button>
-            <button
-              className="btn"
-              onClick={() => generate(20)}
-              title="Queue two batches of 10 — builds toward a big pool to triage"
-            >
-              Generate 20
-            </button>
+          </Tooltip>
+          <Group gap="0.75rem">
+            <Tooltip label="Queue one batch of 5 candidates matching the brief">
+              <Button variant="filled" onClick={() => generate(5)}>
+                Generate 5
+              </Button>
+            </Tooltip>
+            <Tooltip label="Queue two batches of 10 — builds toward a big pool to triage">
+              <Button onClick={() => generate(20)}>Generate 20</Button>
+            </Tooltip>
             <span className="spacer" />
-            <button className="btn surprise" onClick={surprise} title="Free rein: the model picks key, mode, tempo, texture, and instrumentation">
-              🎲 Surprise me
-            </button>
-          </div>
-        </div>
-      )}
+            <Tooltip label="Free rein: the model picks key, mode, tempo, texture, and instrumentation">
+              <Button variant="outline" color="yellow" onClick={surprise}>
+                🎲 Surprise me
+              </Button>
+            </Tooltip>
+          </Group>
+        </Stack>
+      </Collapse>
     </section>
   )
 }

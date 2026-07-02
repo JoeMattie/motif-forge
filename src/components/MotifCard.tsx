@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import type { Motif } from '../types'
+import { ActionIcon, Badge, Button, Group, Rating, Tooltip } from '@mantine/core'
+import type { Motif, Rating as RatingValue } from '../types'
 import { engine } from '../audio/engine'
 import { motifToMidi, midiFilename } from '../core/midi'
 import { audioBufferToWavBlob } from '../core/wav'
@@ -61,9 +62,9 @@ export function MotifCard({ motif, selected, showConcept }: MotifCardProps) {
       onClick={() => dispatch({ type: 'SELECT', id: motif.id })}
     >
       <div className="card-head">
-        <span className="card-name" title={motif.rationale}>
-          {motif.name}
-        </span>
+        <Tooltip label={motif.rationale} disabled={!motif.rationale}>
+          <span className="card-name">{motif.name}</span>
+        </Tooltip>
         <span className="card-meta">
           {motif.key} {motif.mode} · {motif.bars}b · {motif.tempo}bpm
         </span>
@@ -72,65 +73,93 @@ export function MotifCard({ motif, selected, showConcept }: MotifCardProps) {
       {motif.parts.length > 1 && (
         <div className="part-legend">
           {motif.parts.map((p, i) => (
-            <span key={i} className={`part-chip part-${i}`} title={p.preset ? `${p.name}: ${p.preset.oscillator} synth` : p.name}>
-              {p.name}·{p.instrument}
-            </span>
+            <Tooltip
+              key={i}
+              label={p.preset ? `${p.name}: ${p.preset.oscillator} synth` : p.name}
+            >
+              <span className={`part-chip part-${i}`}>
+                {p.name}·{p.instrument}
+              </span>
+            </Tooltip>
           ))}
         </div>
       )}
-      <div className="card-foot">
-        <button
-          className="btn play-btn"
-          onClick={(e) => {
-            e.stopPropagation()
-            dispatch({ type: 'SELECT', id: motif.id })
-            engine.toggle(motif, playOpts)
-          }}
-          title="Play/stop (Space)"
-        >
-          {isLoading ? '…' : isPlaying ? '■' : '▶'}
-        </button>
-        <span className="rating">
-          {motif.rating > 0 ? '★'.repeat(motif.rating) + '☆'.repeat(5 - motif.rating) : '·····'}
-        </span>
+      <Group gap="0.45rem" wrap="nowrap">
+        <Tooltip label="Play/stop (Space)">
+          <ActionIcon
+            className="play-btn"
+            variant="default"
+            size="lg"
+            onClick={(e) => {
+              e.stopPropagation()
+              dispatch({ type: 'SELECT', id: motif.id })
+              engine.toggle(motif, playOpts)
+            }}
+          >
+            {isLoading ? '…' : isPlaying ? '■' : '▶'}
+          </ActionIcon>
+        </Tooltip>
+        <Tooltip label="Rate (keys 1–5 while selected)">
+          <Rating
+            size="xs"
+            value={motif.rating}
+            onChange={(r) => dispatch({ type: 'MOTIF_RATED', id: motif.id, rating: r as RatingValue })}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </Tooltip>
         {motif.scaleWarning && (
-          <span className="badge warn" title="Contains out-of-scale pitches">
-            chr
-          </span>
+          <Tooltip label="Contains out-of-scale pitches">
+            <Badge color="yellow" size="xs" tt="none">
+              chr
+            </Badge>
+          </Tooltip>
         )}
-        {showConcept && concept && <span className="badge concept">{concept.name}</span>}
+        {showConcept && concept && (
+          <Badge color="blue" size="xs" tt="none">
+            {concept.name}
+          </Badge>
+        )}
         <span className="spacer" />
-        <button
-          className="btn small"
-          onClick={(e) => {
-            e.stopPropagation()
-            dispatch({ type: 'SET_MUTATION_TARGET', id: motif.id })
-          }}
-          title="Mutate"
-        >
-          mutate
-        </button>
-        <button
-          className="btn small"
-          onClick={(e) => {
-            e.stopPropagation()
-            exportMidi()
-          }}
-          title="Download MIDI"
-        >
-          .mid
-        </button>
-        <button
-          className="btn small"
-          onClick={(e) => {
-            e.stopPropagation()
-            void exportWav()
-          }}
-          title="Download WAV"
-        >
-          .wav
-        </button>
-      </div>
+        <Tooltip label="Open in the mutation panel">
+          <Button
+            variant="subtle"
+            color="gray"
+            size="compact-sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              dispatch({ type: 'SET_MUTATION_TARGET', id: motif.id })
+            }}
+          >
+            mutate
+          </Button>
+        </Tooltip>
+        <Tooltip label="Download MIDI">
+          <Button
+            variant="subtle"
+            color="gray"
+            size="compact-sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              exportMidi()
+            }}
+          >
+            .mid
+          </Button>
+        </Tooltip>
+        <Tooltip label="Download WAV">
+          <Button
+            variant="subtle"
+            color="gray"
+            size="compact-sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              void exportWav()
+            }}
+          >
+            .wav
+          </Button>
+        </Tooltip>
+      </Group>
     </div>
   )
 }

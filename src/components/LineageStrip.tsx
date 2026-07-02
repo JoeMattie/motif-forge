@@ -1,3 +1,4 @@
+import { Anchor, Group, Stack, Text, Tooltip } from '@mantine/core'
 import type { Motif } from '../types'
 import { parentIdOf } from '../types'
 import { useAppDispatch, useAppState } from '../store/AppContext'
@@ -36,36 +37,45 @@ export function LineageStrip({ motif }: { motif: Motif }) {
     .sort((a, b) => a.createdAt - b.createdAt)
 
   return (
-    <div className="lineage">
+    <Stack gap={4} className="lineage">
       <div className="lineage-chain">
         {chain.map((m, i) => (
-          <span key={m.id} className="lineage-node">
+          <span key={m.id}>
             {i > 0 && <span className="lineage-arrow"> → </span>}
-            <button
-              className={`btn link${m.id === motif.id ? ' current' : ''}`}
-              onClick={() => dispatch({ type: 'SET_MUTATION_TARGET', id: m.id })}
-              title={sourceLabel(m)}
-            >
-              {m.name}
-            </button>
+            <Tooltip label={sourceLabel(m)}>
+              <Anchor
+                component="button"
+                size="sm"
+                c={m.id === motif.id ? 'forge.5' : 'blue.3'}
+                underline={m.id === motif.id ? 'never' : 'hover'}
+                onClick={() => dispatch({ type: 'SET_MUTATION_TARGET', id: m.id })}
+              >
+                {m.name}
+              </Anchor>
+            </Tooltip>
           </span>
         ))}
       </div>
       {children.length > 0 && (
-        <div className="lineage-children">
-          <span className="dim">{children.length} descendant{children.length > 1 ? 's' : ''}:</span>
+        <Group gap="0.35rem">
+          <Text size="xs" c="dimmed" component="span">
+            {children.length} descendant{children.length > 1 ? 's' : ''}:
+          </Text>
           {children.map((c) => (
-            <button
-              key={c.id}
-              className="btn link"
-              onClick={() => dispatch({ type: 'SET_MUTATION_TARGET', id: c.id })}
-              title={sourceLabel(c)}
-            >
-              {sourceLabel(c)}
-            </button>
+            <Tooltip key={c.id} label={c.name}>
+              <Anchor
+                component="button"
+                size="sm"
+                c="blue.3"
+                underline="hover"
+                onClick={() => dispatch({ type: 'SET_MUTATION_TARGET', id: c.id })}
+              >
+                {sourceLabel(c)}
+              </Anchor>
+            </Tooltip>
           ))}
-        </div>
+        </Group>
       )}
-    </div>
+    </Stack>
   )
 }

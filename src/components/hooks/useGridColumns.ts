@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 /** Number of columns in a CSS grid, tracked via ResizeObserver. */
 export function useGridColumns(): {
-  gridRef: React.RefObject<HTMLDivElement>
+  gridRef: React.RefObject<HTMLDivElement | null>
   columns: number
 } {
   const gridRef = useRef<HTMLDivElement>(null)

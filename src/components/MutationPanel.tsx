@@ -1,4 +1,16 @@
 import { useState } from 'react'
+import {
+  Button,
+  Checkbox,
+  CloseButton,
+  Group,
+  NumberInput,
+  Select,
+  Stack,
+  Text,
+  Textarea,
+  Tooltip,
+} from '@mantine/core'
 import type { Mode, Motif } from '../types'
 import { MODES } from '../core/theory'
 import { applyTransform, type Transform } from '../core/transforms'
@@ -68,147 +80,137 @@ export function MutationPanel({ motif }: { motif: Motif }) {
         <span>
           Mutate — <b>{motif.name}</b>
         </span>
-        <button className="btn small" onClick={() => dispatch({ type: 'SET_MUTATION_TARGET', id: null })}>
-          ✕ close
-        </button>
+        <Tooltip label="Close the mutation panel">
+          <CloseButton
+            size="sm"
+            onClick={() => dispatch({ type: 'SET_MUTATION_TARGET', id: null })}
+          />
+        </Tooltip>
       </div>
 
       <LineageStrip motif={motif} />
 
-      <div className="mutation-roll">
+      <Stack gap={4}>
         <PianoRoll motif={motif} height={140} selectedNotes={selectedNotes} onToggleNote={toggleNote} />
-        <span className="dim hint">click notes to select them for octave displacement</span>
-      </div>
+        <Text size="xs" c="dimmed">
+          click notes to select them for octave displacement
+        </Text>
+      </Stack>
 
-      <div className="transform-grid">
-        <button
-          className="btn"
-          onClick={() => apply({ type: 'inversion' })}
-          title="Flip the contour upside down around the first note — rises become falls"
+      <Group gap="0.45rem">
+        <Tooltip label="Flip the contour upside down around the first note — rises become falls">
+          <Button onClick={() => apply({ type: 'inversion' })}>inversion</Button>
+        </Tooltip>
+        <Tooltip label="Play the motif backwards in time">
+          <Button onClick={() => apply({ type: 'retrograde' })}>retrograde</Button>
+        </Tooltip>
+        <Tooltip label="Backwards and upside down — the most disguised transform">
+          <Button onClick={() => apply({ type: 'retrogradeInversion' })}>retro-inversion</Button>
+        </Tooltip>
+        <Tooltip
+          label={`Double every duration — same notes at half speed, twice the bars${augmentWarning ? ` (result will be ${motif.bars * 2} bars, beyond the 2–8 bar range)` : ''}`}
         >
-          inversion
-        </button>
-        <button
-          className="btn"
-          onClick={() => apply({ type: 'retrograde' })}
-          title="Play the motif backwards in time"
-        >
-          retrograde
-        </button>
-        <button
-          className="btn"
-          onClick={() => apply({ type: 'retrogradeInversion' })}
-          title="Backwards and upside down — the most disguised transform"
-        >
-          retro-inversion
-        </button>
-        <button
-          className="btn"
-          onClick={() => apply({ type: 'augment' })}
-          title={`Double every duration — same notes at half speed, twice the bars${augmentWarning ? ` (result will be ${motif.bars * 2} bars, beyond the 2–8 bar range)` : ''}`}
-        >
-          augment ×2{augmentWarning ? ' ⚠' : ''}
-        </button>
-        <button
-          className="btn"
-          onClick={() => apply({ type: 'diminish' })}
-          title="Halve every duration — same notes at double speed, half the bars"
-        >
-          diminish ×0.5
-        </button>
-        <span className="transform-combo">
-          <button
-            className="btn"
-            onClick={() => apply({ type: 'transpose', semitones: transposeBy })}
-            title="Shift every pitch by the chosen number of semitones (+12 = up an octave)"
-          >
-            transpose
-          </button>
-          <input
-            type="number"
-            min={-12}
-            max={12}
-            value={transposeBy}
-            onChange={(e) => setTransposeBy(Number(e.target.value))}
-            title="Semitones to shift by (negative = down)"
-          />
-        </span>
-        <span className="transform-combo">
-          <button
-            className="btn"
-            onClick={() => apply({ type: 'modeSwap', targetMode })}
-            title="Recolor the motif: keep each note's scale degree but re-spell it in the target mode (e.g. dorian → phrygian darkens it)"
-          >
-            mode swap
-          </button>
-          <select
-            value={targetMode}
-            onChange={(e) => setTargetMode(e.target.value as Mode)}
-            title="Mode to remap into"
-          >
-            {MODES.filter((m) => m !== motif.mode).map((m) => (
-              <option key={m}>{m}</option>
-            ))}
-          </select>
-        </span>
-        <span className="transform-combo">
-          <button
-            className="btn"
-            disabled={selectedNotes.size === 0}
-            onClick={() => apply({ type: 'octaveDisplace', noteIndices: [...selectedNotes], direction: 1 })}
-            title="Move the notes selected on the roll above up one octave (click notes to select them)"
-          >
-            8va ↑
-          </button>
-          <button
-            className="btn"
-            disabled={selectedNotes.size === 0}
-            onClick={() => apply({ type: 'octaveDisplace', noteIndices: [...selectedNotes], direction: -1 })}
-            title="Move the notes selected on the roll above down one octave (click notes to select them)"
-          >
-            8vb ↓
-          </button>
-        </span>
-      </div>
+          <Button onClick={() => apply({ type: 'augment' })}>
+            augment ×2{augmentWarning ? ' ⚠' : ''}
+          </Button>
+        </Tooltip>
+        <Tooltip label="Halve every duration — same notes at double speed, half the bars">
+          <Button onClick={() => apply({ type: 'diminish' })}>diminish ×0.5</Button>
+        </Tooltip>
+        <Group gap={4} wrap="nowrap">
+          <Tooltip label="Shift every pitch by the chosen number of semitones (+12 = up an octave)">
+            <Button onClick={() => apply({ type: 'transpose', semitones: transposeBy })}>
+              transpose
+            </Button>
+          </Tooltip>
+          <Tooltip label="Semitones to shift by (negative = down)">
+            <NumberInput
+              w={64}
+              min={-12}
+              max={12}
+              value={transposeBy}
+              onChange={(v) => setTransposeBy(Number(v) || 0)}
+            />
+          </Tooltip>
+        </Group>
+        <Group gap={4} wrap="nowrap">
+          <Tooltip label="Recolor the motif: keep each note's scale degree but re-spell it in the target mode (e.g. dorian → phrygian darkens it)">
+            <Button onClick={() => apply({ type: 'modeSwap', targetMode })}>mode swap</Button>
+          </Tooltip>
+          <Tooltip label="Mode to remap into">
+            <Select
+              w={120}
+              value={targetMode}
+              onChange={(v) => v && setTargetMode(v as Mode)}
+              data={MODES.filter((m) => m !== motif.mode)}
+            />
+          </Tooltip>
+        </Group>
+        <Group gap={4} wrap="nowrap">
+          <Tooltip label="Move the notes selected on the roll above up one octave (click notes to select them)">
+            <Button
+              disabled={selectedNotes.size === 0}
+              onClick={() => apply({ type: 'octaveDisplace', noteIndices: [...selectedNotes], direction: 1 })}
+            >
+              8va ↑
+            </Button>
+          </Tooltip>
+          <Tooltip label="Move the notes selected on the roll above down one octave (click notes to select them)">
+            <Button
+              disabled={selectedNotes.size === 0}
+              onClick={() => apply({ type: 'octaveDisplace', noteIndices: [...selectedNotes], direction: -1 })}
+            >
+              8vb ↓
+            </Button>
+          </Tooltip>
+        </Group>
+      </Group>
 
-      <div className="llm-mutation">
-        <textarea
+      <Stack gap="0.45rem">
+        <Textarea
           rows={2}
           placeholder='LLM mutation brief… e.g. "keep the first bar intact but resolve differently", "add a drum groove", "make it more syncopated"'
           value={brief}
-          onChange={(e) => setBrief(e.target.value)}
+          onChange={(e) => setBrief(e.currentTarget.value)}
         />
-        <label className="check dim" title="Children keep the parent's exact note timings — only pitches (and velocities) change">
-          <input
-            type="checkbox"
+        <Tooltip label="Children keep the parent's exact note timings — only pitches (and velocities) change">
+          <Checkbox
+            label="lock rhythm"
             checked={lockRhythm}
-            onChange={(e) => setLockRhythm(e.target.checked)}
+            onChange={(e) => setLockRhythm(e.currentTarget.checked)}
           />
-          lock rhythm
-        </label>
-        <div className="field-row">
-          <button
-            className="btn primary"
+        </Tooltip>
+        <Group gap="0.75rem">
+          <Button
+            variant="filled"
             disabled={busy || !brief.trim()}
             onClick={() => void runLlmMutation(brief)}
           >
             {busy ? 'mutating…' : '5 LLM variations'}
-          </button>
-          <button
-            className="btn surprise"
-            disabled={busy}
-            onClick={() => void runLlmMutation(SURPRISE_MUTATION_BRIEF)}
-            title="Free rein: reinterpret texture, instrumentation, rhythm, or mood while keeping a recognizable kernel"
-          >
-            🎲 Surprise me
-          </button>
-        </div>
-        {message && <span className="dim">{message}</span>}
-      </div>
+          </Button>
+          <Tooltip label="Free rein: reinterpret texture, instrumentation, rhythm, or mood while keeping a recognizable kernel">
+            <Button
+              variant="outline"
+              color="yellow"
+              disabled={busy}
+              onClick={() => void runLlmMutation(SURPRISE_MUTATION_BRIEF)}
+            >
+              🎲 Surprise me
+            </Button>
+          </Tooltip>
+        </Group>
+        {message && (
+          <Text size="sm" c="dimmed">
+            {message}
+          </Text>
+        )}
+      </Stack>
 
       {children.length > 0 && (
         <div className="children">
-          <div className="dim">children</div>
+          <Text size="sm" c="dimmed">
+            children
+          </Text>
           <div className="children-grid">
             {children.map((c) => (
               <MotifCard key={c.id} motif={c} selected={c.id === state.selectedId} />

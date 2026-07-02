@@ -15,6 +15,8 @@
   --part-2: #b48ac2;
   --part-3: #d48a9b;
   font-family: 'SF Mono', ui-monospace, 'Cascadia Code', Menlo, monospace;
+  /* 13px root also scales Mantine's rem-based sizing down to a compact studio fit
+     (font sizes are pinned in px in src/theme.ts). */
   font-size: 13px;
 }
 
@@ -33,13 +35,6 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-}
-
-.loading,
-.empty {
-  padding: 3rem;
-  text-align: center;
-  color: var(--text-dim);
 }
 
 /* ---------- transport bar ---------- */
@@ -62,11 +57,6 @@ body {
   color: var(--accent);
 }
 
-.views {
-  display: flex;
-  gap: 0.25rem;
-}
-
 .spacer {
   flex: 1;
 }
@@ -82,109 +72,6 @@ body {
 .bpm {
   min-width: 4.5em;
   color: var(--text);
-}
-
-.toast {
-  color: var(--accent);
-  background: var(--bg-raised);
-  border: 1px solid var(--accent-dim);
-  border-radius: 4px;
-  padding: 0.25rem 0.6rem;
-  cursor: pointer;
-}
-
-/* ---------- buttons & inputs ---------- */
-
-.btn {
-  background: var(--bg-raised);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0.3rem 0.65rem;
-  font: inherit;
-  cursor: pointer;
-}
-.btn:hover {
-  border-color: var(--accent-dim);
-}
-.btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.btn.primary {
-  background: var(--accent-dim);
-  border-color: var(--accent-dim);
-  color: #eafaf5;
-}
-.btn.primary:hover:not(:disabled) {
-  background: var(--accent);
-}
-.btn.small {
-  padding: 0.15rem 0.45rem;
-  font-size: 11px;
-  color: var(--text-dim);
-}
-.btn.small:hover {
-  color: var(--text);
-}
-.btn.tab {
-  border: none;
-  background: none;
-  color: var(--text-dim);
-}
-.btn.tab.active {
-  color: var(--accent);
-}
-.btn.chip {
-  border-radius: 999px;
-  padding: 0.2rem 0.7rem;
-  color: var(--text-dim);
-}
-.btn.chip.active {
-  color: var(--accent);
-  border-color: var(--accent-dim);
-}
-.btn.link {
-  border: none;
-  background: none;
-  padding: 0.1rem 0.2rem;
-  color: var(--note);
-  text-decoration: underline;
-  text-decoration-color: var(--border);
-}
-.btn.link.current {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-input,
-select,
-textarea {
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0.3rem 0.45rem;
-  font: inherit;
-}
-input:focus,
-select:focus,
-textarea:focus {
-  outline: none;
-  border-color: var(--accent-dim);
-}
-input[type='number'] {
-  width: 4.5em;
-}
-input[type='checkbox'] {
-  accent-color: var(--accent);
-}
-input[type='range'] {
-  accent-color: var(--accent);
-}
-textarea {
-  resize: vertical;
-  width: 100%;
 }
 
 /* ---------- layout ---------- */
@@ -224,53 +111,12 @@ main.with-panel .view {
   user-select: none;
 }
 
-.panel-body {
-  padding: 0 0.8rem 0.8rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.field-row {
-  display: flex;
-  gap: 0.75rem;
-  align-items: flex-end;
-  flex-wrap: wrap;
-}
-
-.field-row label,
-.panel-body > label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  color: var(--text-dim);
-}
-
-.field-row label.check {
-  flex-direction: row;
-  align-items: center;
-  padding-bottom: 0.4rem;
-}
-
-label.grow {
-  flex: 1;
+/* Checkboxes sitting in a row of labeled inputs align to the inputs' bottom edge */
+.check {
+  padding-bottom: 0.5rem;
 }
 
 /* ---------- triage grid ---------- */
-
-.filter-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.9rem;
-  flex-wrap: wrap;
-}
-
-.hint {
-  color: var(--text-dim);
-  font-size: 11px;
-  margin-left: auto;
-}
 
 .motif-grid {
   display: grid;
@@ -317,11 +163,6 @@ label.grow {
   animation: pending-pulse 1.3s ease-in-out infinite;
 }
 
-.pending-label {
-  color: var(--text-dim);
-  font-size: 12px;
-}
-
 @keyframes pending-pulse {
   0%,
   100% {
@@ -332,15 +173,6 @@ label.grow {
     opacity: 1;
     border-color: var(--accent-dim);
   }
-}
-
-.btn.surprise {
-  border-color: var(--warn);
-  color: var(--warn);
-}
-.btn.surprise:hover:not(:disabled) {
-  background: var(--warn);
-  color: #1a150a;
 }
 
 .card-head {
@@ -360,12 +192,6 @@ label.grow {
   color: var(--text-dim);
   font-size: 11px;
   white-space: nowrap;
-}
-
-.card-foot {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
 }
 
 .part-legend {
@@ -396,29 +222,7 @@ label.grow {
 }
 
 .play-btn {
-  min-width: 2.2em;
   color: var(--accent);
-}
-
-.rating {
-  color: var(--warn);
-  font-size: 12px;
-  letter-spacing: 0.1em;
-}
-
-.badge {
-  font-size: 10px;
-  border-radius: 3px;
-  padding: 0.1rem 0.35rem;
-  border: 1px solid var(--border);
-}
-.badge.warn {
-  color: var(--warn);
-  border-color: var(--warn);
-}
-.badge.concept {
-  color: var(--note);
-  border-color: var(--note);
 }
 
 /* ---------- piano roll ---------- */
@@ -483,30 +287,6 @@ label.grow {
   gap: 0.8rem;
 }
 
-.mutation-roll {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.transform-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-}
-
-.transform-combo {
-  display: flex;
-  gap: 0.25rem;
-  align-items: center;
-}
-
-.llm-mutation {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
 .children-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -517,9 +297,6 @@ label.grow {
 /* ---------- lineage ---------- */
 
 .lineage {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
   font-size: 12px;
 }
 
@@ -527,28 +304,7 @@ label.grow {
   color: var(--text-dim);
 }
 
-.lineage-children {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  align-items: center;
-}
-
-.dim {
-  color: var(--text-dim);
-}
-
-/* ---------- library / concepts ---------- */
-
-.library-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.concept-select {
-  font-size: 11px;
-}
+/* ---------- concepts ---------- */
 
 .concept-group {
   margin-bottom: 1.2rem;

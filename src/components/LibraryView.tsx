@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Button, Group, Select, Stack, Text, TextInput, Tooltip } from '@mantine/core'
 import { useAppDispatch, useAppState } from '../store/AppContext'
 import { newId } from '../core/ids'
 import { MotifCard } from './MotifCard'
@@ -29,54 +30,55 @@ export function LibraryView() {
 
   return (
     <div className="library">
-      <div className="filter-row">
-        <label className="transport-control">
-          min rating
-          <select value={minRating} onChange={(e) => setMinRating(Number(e.target.value))}>
-            {[1, 2, 3, 4, 5].map((r) => (
-              <option key={r} value={r}>
-                {'★'.repeat(r)}
-              </option>
-            ))}
-          </select>
-        </label>
+      <Group gap="0.5rem" mb="0.9rem">
+        <Tooltip label="Only show motifs rated at least this highly">
+          <label className="transport-control">
+            min rating
+            <Select
+              w={110}
+              value={String(minRating)}
+              onChange={(v) => v && setMinRating(Number(v))}
+              data={[1, 2, 3, 4, 5].map((r) => ({ value: String(r), label: '★'.repeat(r) }))}
+            />
+          </label>
+        </Tooltip>
         <span className="spacer" />
-        <input
-          type="text"
+        <TextInput
           placeholder="new concept name"
           value={newConcept}
-          onChange={(e) => setNewConcept(e.target.value)}
+          onChange={(e) => setNewConcept(e.currentTarget.value)}
         />
-        <button className="btn" onClick={createConcept} disabled={!newConcept.trim()}>
+        <Button onClick={createConcept} disabled={!newConcept.trim()}>
           + concept
-        </button>
-      </div>
+        </Button>
+      </Group>
       {kept.length === 0 ? (
-        <div className="empty">No motifs rated {'★'.repeat(minRating)} or higher yet.</div>
+        <Text c="dimmed" ta="center" py="3rem">
+          No motifs rated {'★'.repeat(minRating)} or higher yet.
+        </Text>
       ) : (
         <div className="motif-grid">
           {kept.map((m) => (
-            <div key={m.id} className="library-item">
+            <Stack key={m.id} gap={6}>
               <MotifCard motif={m} selected={m.id === state.selectedId} showConcept />
-              <select
-                className="concept-select"
-                value={m.conceptId ?? ''}
-                onChange={(e) =>
-                  dispatch({
-                    type: 'MOTIF_ASSIGNED_CONCEPT',
-                    id: m.id,
-                    conceptId: e.target.value || null,
-                  })
-                }
-              >
-                <option value="">no concept</option>
-                {[...state.concepts.values()].map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <Tooltip label="Tag this motif to a song concept">
+                <Select
+                  size="xs"
+                  value={m.conceptId ?? ''}
+                  onChange={(v) =>
+                    dispatch({
+                      type: 'MOTIF_ASSIGNED_CONCEPT',
+                      id: m.id,
+                      conceptId: v || null,
+                    })
+                  }
+                  data={[
+                    { value: '', label: 'no concept' },
+                    ...[...state.concepts.values()].map((c) => ({ value: c.id, label: c.name })),
+                  ]}
+                />
+              </Tooltip>
+            </Stack>
           ))}
         </div>
       )}

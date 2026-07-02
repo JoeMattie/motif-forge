@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Button, Group, Kbd, Loader, Text, Tooltip } from '@mantine/core'
 import { useAppState } from '../store/AppContext'
 import { useGridColumns } from './hooks/useGridColumns'
 import { useKeyboardTriage } from './hooks/useKeyboardTriage'
@@ -6,6 +7,13 @@ import { GenerationPanel } from './GenerationPanel'
 import { MotifCard } from './MotifCard'
 
 type Filter = 'unrated' | 'rated' | 'discarded' | 'all'
+
+const FILTER_HINTS: Record<Filter, string> = {
+  all: 'Everything except discards',
+  unrated: 'Still to triage — no rating yet',
+  rated: 'Rated 1–5 stars',
+  discarded: 'Soft-deleted with x — press u to undo the most recent discard',
+}
 
 export function TriageGrid() {
   const state = useAppState()
@@ -41,34 +49,34 @@ export function TriageGrid() {
   return (
     <div className="triage">
       <GenerationPanel />
-      <div className="filter-row">
+      <Group gap="0.5rem" mb="0.9rem">
         {(['all', 'unrated', 'rated', 'discarded'] as Filter[]).map((f) => (
-          <button
-            key={f}
-            className={`btn chip${filter === f ? ' active' : ''}`}
-            onClick={() => setFilter(f)}
-            title={
-              {
-                all: 'Everything except discards',
-                unrated: 'Still to triage — no rating yet',
-                rated: 'Rated 1–5 stars',
-                discarded: 'Soft-deleted with x — press u to undo the most recent discard',
-              }[f]
-            }
-          >
-            {f} ({counts[f]})
-          </button>
+          <Tooltip key={f} label={FILTER_HINTS[f]}>
+            <Button
+              radius="xl"
+              variant={filter === f ? 'light' : 'default'}
+              color={filter === f ? 'forge' : 'gray'}
+              onClick={() => setFilter(f)}
+            >
+              {f} ({counts[f]})
+            </Button>
+          </Tooltip>
         ))}
-        <span className="hint">
-          ←→↑↓ navigate · space play · 1–5 rate · x discard · u undo
-        </span>
-      </div>
+        <Text size="xs" c="dimmed" ml="auto" component="span">
+          <Kbd size="xs">←</Kbd>
+          <Kbd size="xs">→</Kbd>
+          <Kbd size="xs">↑</Kbd>
+          <Kbd size="xs">↓</Kbd> navigate · <Kbd size="xs">space</Kbd> play ·{' '}
+          <Kbd size="xs">1</Kbd>–<Kbd size="xs">5</Kbd> rate · <Kbd size="xs">x</Kbd> discard ·{' '}
+          <Kbd size="xs">u</Kbd> undo
+        </Text>
+      </Group>
       {visible.length === 0 && state.pending.length === 0 ? (
-        <div className="empty">
+        <Text c="dimmed" ta="center" py="3rem">
           {state.motifs.size === 0
             ? 'No motifs yet — write a brief above and generate a batch.'
             : 'Nothing matches this filter.'}
-        </div>
+        </Text>
       ) : (
         <div className="motif-grid" ref={gridRef}>
           {visible.map((m) => (
@@ -76,9 +84,10 @@ export function TriageGrid() {
           ))}
           {state.pending.map((b) => (
             <div key={b.id} className="motif-card pending-card">
-              <span className="pending-label">
+              <Loader size="xs" type="dots" />
+              <Text size="xs" c="dimmed">
                 generating {b.count} · {b.label}
-              </span>
+              </Text>
             </div>
           ))}
         </div>

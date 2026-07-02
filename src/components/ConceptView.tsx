@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Button, Group, Text, Tooltip } from '@mantine/core'
 import type { Motif } from '../types'
 import { parentIdOf } from '../types'
 import { useAppDispatch, useAppState } from '../store/AppContext'
@@ -43,38 +44,41 @@ export function ConceptView() {
 
   if (concepts.length === 0) {
     return (
-      <div className="empty">
+      <Text c="dimmed" ta="center" py="3rem">
         No concepts yet — name one in the generation panel or create one in the Library.
-      </div>
+      </Text>
     )
   }
 
   return (
     <div className="concept-view">
-      <div className="filter-row">
+      <Group gap="0.5rem" mb="0.9rem">
         {concepts.map((c) => (
-          <button
+          <Button
             key={c.id}
-            className={`btn chip${conceptId === c.id ? ' active' : ''}`}
+            radius="xl"
+            variant={conceptId === c.id ? 'light' : 'default'}
+            color={conceptId === c.id ? 'forge' : 'gray'}
             onClick={() => setConceptId(c.id)}
           >
             {c.name}
-          </button>
+          </Button>
         ))}
-      </div>
+      </Group>
       {groups.length === 0 ? (
-        <div className="empty">No motifs tagged to this concept yet.</div>
+        <Text c="dimmed" ta="center" py="3rem">
+          No motifs tagged to this concept yet.
+        </Text>
       ) : (
         groups.map(({ root, descendants }) => (
           <div key={root.id} className="concept-group">
             <div className="concept-group-head">
               <MotifCard motif={root} selected={root.id === state.selectedId} />
-              <button
-                className="btn"
-                onClick={() => dispatch({ type: 'SET_MUTATION_TARGET', id: root.id })}
-              >
-                transform for new track →
-              </button>
+              <Tooltip label="Open in the mutation panel to derive a variant for another track">
+                <Button onClick={() => dispatch({ type: 'SET_MUTATION_TARGET', id: root.id })}>
+                  transform for new track →
+                </Button>
+              </Tooltip>
             </div>
             {descendants.length > 0 && (
               <div className="motif-grid indented">

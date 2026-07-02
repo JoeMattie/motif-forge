@@ -19,7 +19,7 @@ export function useIsLoading(motifId: string): boolean {
  */
 export function usePlayhead(motifId: string): {
   isPlaying: boolean
-  playheadRef: React.RefObject<SVGLineElement>
+  playheadRef: React.RefObject<SVGLineElement | null>
 } {
   const isPlaying = useIsPlaying(motifId)
   const playheadRef = useRef<SVGLineElement>(null)

@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Center, Group, Loader, Text } from '@mantine/core'
 import { useAppDispatch, useAppState } from './store/AppContext'
 import { SAMPLE_MOTIFS } from './core/sampleMotifs'
 import { TransportBar } from './components/TransportBar'
@@ -22,7 +23,14 @@ export function App() {
   }, [state.hydrated]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!state.hydrated) {
-    return <div className="loading">loading library…</div>
+    return (
+      <Center h="100vh">
+        <Group gap="xs">
+          <Loader size="sm" />
+          <Text c="dimmed">loading library…</Text>
+        </Group>
+      </Center>
+    )
   }
 
   const mutationTarget = state.mutationTargetId

@@ -1,13 +1,14 @@
+import { Button, Checkbox, SegmentedControl, Select, Slider, Tooltip } from '@mantine/core'
 import { engine } from '../audio/engine'
 import { SOUNDS } from '../audio/instruments'
 import type { Sound } from '../types'
 import { useAppDispatch, useAppState } from '../store/AppContext'
 import type { View } from '../store/appState'
 
-const VIEWS: { id: View; label: string }[] = [
-  { id: 'triage', label: 'Triage' },
-  { id: 'library', label: 'Library' },
-  { id: 'concepts', label: 'Concepts' },
+const VIEWS: { value: View; label: string }[] = [
+  { value: 'triage', label: 'Triage' },
+  { value: 'library', label: 'Library' },
+  { value: 'concepts', label: 'Concepts' },
 ]
 
 export function TransportBar() {
@@ -21,111 +22,91 @@ export function TransportBar() {
         Motif<b>Forge</b>
       </span>
 
-      <nav className="views">
-        {VIEWS.map((v) => (
-          <button
-            key={v.id}
-            className={`btn tab${view === v.id ? ' active' : ''}`}
-            onClick={() => {
-              engine.stop()
-              dispatch({ type: 'SET_VIEW', view: v.id })
-            }}
-          >
-            {v.label}
-          </button>
-        ))}
-      </nav>
+      <SegmentedControl
+        size="xs"
+        value={view}
+        onChange={(v) => {
+          engine.stop()
+          dispatch({ type: 'SET_VIEW', view: v as View })
+        }}
+        data={VIEWS}
+      />
 
       <span className="spacer" />
 
       {generation.message && (
-        <span className="toast" onClick={() => dispatch({ type: 'CLEAR_MESSAGE' })}>
-          {generation.message}
-        </span>
+        <Tooltip label="Dismiss">
+          <Button variant="light" color="forge" onClick={() => dispatch({ type: 'CLEAR_MESSAGE' })}>
+            {generation.message}
+          </Button>
+        </Tooltip>
       )}
 
-      <label className="transport-control">
-        sound
-        <select
-          value={transport.sound}
-          onChange={(e) =>
-            dispatch({ type: 'SET_TRANSPORT', transport: { sound: e.target.value as Sound } })
-          }
-          title="Playback instrument (sampled sounds load from a CDN on first use)"
-        >
-          {SOUNDS.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label
-        className="transport-control"
-        title="Ignore each motif's own instrumentation and audition everything through the picked sound"
-      >
-        <input
-          type="checkbox"
+      <Tooltip label="Playback instrument (sampled sounds load from a CDN on first use)">
+        <label className="transport-control">
+          sound
+          <Select
+            w={130}
+            value={transport.sound}
+            onChange={(v) =>
+              v && dispatch({ type: 'SET_TRANSPORT', transport: { sound: v as Sound } })
+            }
+            data={SOUNDS.map((s) => ({ value: s.id, label: s.label }))}
+          />
+        </label>
+      </Tooltip>
+      <Tooltip label="Ignore each motif's own instrumentation and audition everything through the picked sound">
+        <Checkbox
+          label="force"
           checked={transport.forceSound}
           onChange={(e) =>
-            dispatch({ type: 'SET_TRANSPORT', transport: { forceSound: e.target.checked } })
+            dispatch({ type: 'SET_TRANSPORT', transport: { forceSound: e.currentTarget.checked } })
           }
         />
-        force
-      </label>
-      <label
-        className="transport-control"
-        title="Audition everything at one BPM instead of each motif's own tempo — useful for fair side-by-side comparison"
-      >
-        <input
-          type="checkbox"
+      </Tooltip>
+      <Tooltip label="Audition everything at one BPM instead of each motif's own tempo — useful for fair side-by-side comparison">
+        <Checkbox
+          label="fixed tempo"
           checked={fixed}
           onChange={(e) =>
             dispatch({
               type: 'SET_TRANSPORT',
-              transport: { tempoMode: e.target.checked ? 100 : 'motif' },
+              transport: { tempoMode: e.currentTarget.checked ? 100 : 'motif' },
             })
           }
         />
-        fixed tempo
-      </label>
+      </Tooltip>
       {fixed && (
-        <label className="transport-control">
-          <input
-            type="range"
+        <span className="transport-control">
+          <Slider
+            w={120}
             min={40}
             max={200}
+            label={null}
             value={transport.tempoMode as number}
-            onChange={(e) =>
-              dispatch({ type: 'SET_TRANSPORT', transport: { tempoMode: Number(e.target.value) } })
-            }
+            onChange={(v) => dispatch({ type: 'SET_TRANSPORT', transport: { tempoMode: v } })}
           />
           <span className="bpm">{transport.tempoMode} bpm</span>
-        </label>
+        </span>
       )}
-      <label className="transport-control" title="Metronome click during playback (accented on beat 1)">
-        <input
-          type="checkbox"
+      <Tooltip label="Metronome click during playback (accented on beat 1)">
+        <Checkbox
+          label="click"
           checked={transport.metronome}
           onChange={(e) =>
-            dispatch({ type: 'SET_TRANSPORT', transport: { metronome: e.target.checked } })
+            dispatch({ type: 'SET_TRANSPORT', transport: { metronome: e.currentTarget.checked } })
           }
         />
-        click
-      </label>
-      <label
-        className="transport-control"
-        title="Sustained root note under playback so you hear each motif against its tonal center (included in WAV export)"
-      >
-        <input
-          type="checkbox"
+      </Tooltip>
+      <Tooltip label="Sustained root note under playback so you hear each motif against its tonal center (included in WAV export)">
+        <Checkbox
+          label="drone"
           checked={transport.drone}
           onChange={(e) =>
-            dispatch({ type: 'SET_TRANSPORT', transport: { drone: e.target.checked } })
+            dispatch({ type: 'SET_TRANSPORT', transport: { drone: e.currentTarget.checked } })
           }
         />
-        drone
-      </label>
+      </Tooltip>
     </header>
   )
 }
