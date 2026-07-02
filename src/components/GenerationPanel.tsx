@@ -2,7 +2,9 @@ import { useState } from 'react'
 import {
   Button,
   Checkbox,
+  Chip,
   Collapse,
+  Fieldset,
   Group,
   NumberInput,
   Select,
@@ -134,16 +136,18 @@ export function GenerationPanel() {
               />
             </Tooltip>
             <Tooltip label="Lead: one clear melodic line with occasional chords (≤4 voices). Poly: chords, pads, and counterpoint welcome (≤6 voices, up to 4 parts)">
-              <Select
-                label="texture"
-                w={180}
-                value={texture}
-                onChange={(v) => v && setTexture(v as Texture)}
-                data={[
-                  { value: 'lead', label: 'lead + light harmony' },
-                  { value: 'poly', label: 'freely polyphonic' },
-                ]}
-              />
+              <Fieldset legend="texture">
+                <Chip.Group
+                  multiple={false}
+                  value={texture}
+                  onChange={(v) => v && setTexture(v as Texture)}
+                >
+                  <Group gap="0.4rem" wrap="nowrap">
+                    <Chip value="lead">lead + light harmony</Chip>
+                    <Chip value="poly">freely polyphonic</Chip>
+                  </Group>
+                </Chip.Group>
+              </Fieldset>
             </Tooltip>
             <Tooltip label="Every candidate includes a drum-kit part (GM percussion) grooving under the melodic material">
               <Checkbox

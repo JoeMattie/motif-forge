@@ -54,6 +54,13 @@ export const theme = createTheme({
       defaultProps: { size: 'sm' },
       styles: { label: { color: 'var(--text-dim)' } },
     },
+    Chip: { defaultProps: { size: 'xs' } },
+    Fieldset: {
+      styles: {
+        root: { padding: '0.3rem 0.6rem 0.45rem', backgroundColor: 'transparent' },
+        legend: { color: 'var(--text-dim)', padding: '0 0.3rem' },
+      },
+    },
     Slider: { defaultProps: { size: 'sm' } },
     Badge: { defaultProps: { variant: 'outline', size: 'sm' } },
     Tooltip: {

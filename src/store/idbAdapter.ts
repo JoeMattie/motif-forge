@@ -76,6 +76,12 @@ class IdbAdapter implements PersistenceAdapter {
     s.put(c)
     await txDone(tx)
   }
+
+  async deleteConcept(id: string): Promise<void> {
+    const { s, tx } = this.store('concepts', 'readwrite')
+    s.delete(id)
+    await txDone(tx)
+  }
 }
 
 export const idbAdapter: PersistenceAdapter = new IdbAdapter()

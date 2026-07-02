@@ -36,6 +36,9 @@ export function AppProvider({
         case 'CONCEPT_CREATED':
           persist(adapter.putConcept(action.concept))
           break
+        case 'CONCEPT_DELETED':
+          persist(adapter.deleteConcept(action.id))
+          break
         default:
           break
       }

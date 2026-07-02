@@ -61,6 +61,7 @@ export type Action =
   | { type: 'MOTIF_RESTORED'; id: string }
   | { type: 'MOTIF_ASSIGNED_CONCEPT'; id: string; conceptId: string | null }
   | { type: 'CONCEPT_CREATED'; concept: Concept }
+  | { type: 'CONCEPT_DELETED'; id: string }
   | { type: 'SELECT'; id: string | null }
   | { type: 'SET_MUTATION_TARGET'; id: string | null }
   | { type: 'SET_VIEW'; view: View }
@@ -108,6 +109,11 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'CONCEPT_CREATED': {
       const concepts = new Map(state.concepts)
       concepts.set(action.concept.id, action.concept)
+      return { ...state, concepts }
+    }
+    case 'CONCEPT_DELETED': {
+      const concepts = new Map(state.concepts)
+      concepts.delete(action.id)
       return { ...state, concepts }
     }
     case 'SELECT':

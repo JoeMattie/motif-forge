@@ -62,7 +62,8 @@ export function MotifCard({ motif, selected, showConcept }: MotifCardProps) {
       onClick={() => dispatch({ type: 'SELECT', id: motif.id })}
     >
       <div className="card-head">
-        <Tooltip label={motif.rationale} disabled={!motif.rationale}>
+        {/* undefined (not false) when rationale exists, so the global hints toggle still applies */}
+        <Tooltip label={motif.rationale} disabled={motif.rationale ? undefined : true}>
           <span className="card-name">{motif.name}</span>
         </Tooltip>
         <span className="card-meta">

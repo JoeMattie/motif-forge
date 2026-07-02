@@ -6,4 +6,5 @@ export interface PersistenceAdapter {
   putMotif(m: Motif): Promise<void>
   putMotifs(ms: Motif[]): Promise<void>
   putConcept(c: Concept): Promise<void>
+  deleteConcept(id: string): Promise<void>
 }

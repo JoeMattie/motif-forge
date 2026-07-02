@@ -4,6 +4,7 @@ import { SOUNDS } from '../audio/instruments'
 import type { Sound } from '../types'
 import { useAppDispatch, useAppState } from '../store/AppContext'
 import type { View } from '../store/appState'
+import { useTooltipsEnabled } from '../uiPrefs'
 
 const VIEWS: { value: View; label: string }[] = [
   { value: 'triage', label: 'Triage' },
@@ -14,6 +15,7 @@ const VIEWS: { value: View; label: string }[] = [
 export function TransportBar() {
   const { transport, view, generation } = useAppState()
   const dispatch = useAppDispatch()
+  const [tooltipsEnabled, setTooltipsEnabled] = useTooltipsEnabled()
   const fixed = transport.tempoMode !== 'motif'
 
   return (
@@ -105,6 +107,13 @@ export function TransportBar() {
           onChange={(e) =>
             dispatch({ type: 'SET_TRANSPORT', transport: { drone: e.currentTarget.checked } })
           }
+        />
+      </Tooltip>
+      <Tooltip label="Explanatory hover tooltips like this one, everywhere in the app">
+        <Checkbox
+          label="hints"
+          checked={tooltipsEnabled}
+          onChange={(e) => setTooltipsEnabled(e.currentTarget.checked)}
         />
       </Tooltip>
     </header>

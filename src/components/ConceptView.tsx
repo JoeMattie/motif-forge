@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Button, Group, Text, Tooltip } from '@mantine/core'
+import { Button, CloseButton, Group, Text, Tooltip } from '@mantine/core'
 import type { Motif } from '../types'
 import { parentIdOf } from '../types'
 import { useAppDispatch, useAppState } from '../store/AppContext'
@@ -11,6 +11,19 @@ export function ConceptView() {
   const dispatch = useAppDispatch()
   const concepts = [...state.concepts.values()].sort((a, b) => a.createdAt - b.createdAt)
   const [conceptId, setConceptId] = useState<string | null>(concepts[0]?.id ?? null)
+
+  // Concepts referenced by any motif — including discarded ones, which can be
+  // restored and would otherwise come back with a dangling concept tag.
+  const usedConceptIds = useMemo(() => {
+    const used = new Set<string>()
+    for (const m of state.motifs.values()) if (m.conceptId) used.add(m.conceptId)
+    return used
+  }, [state.motifs])
+
+  const deleteConcept = (id: string) => {
+    dispatch({ type: 'CONCEPT_DELETED', id })
+    if (conceptId === id) setConceptId(concepts.find((c) => c.id !== id)?.id ?? null)
+  }
 
   const groups = useMemo(() => {
     if (!conceptId) return []
@@ -54,15 +67,21 @@ export function ConceptView() {
     <div className="concept-view">
       <Group gap="0.5rem" mb="0.9rem">
         {concepts.map((c) => (
-          <Button
-            key={c.id}
-            radius="xl"
-            variant={conceptId === c.id ? 'light' : 'default'}
-            color={conceptId === c.id ? 'forge' : 'gray'}
-            onClick={() => setConceptId(c.id)}
-          >
-            {c.name}
-          </Button>
+          <Group key={c.id} gap={2} wrap="nowrap">
+            <Button
+              radius="xl"
+              variant={conceptId === c.id ? 'light' : 'default'}
+              color={conceptId === c.id ? 'forge' : 'gray'}
+              onClick={() => setConceptId(c.id)}
+            >
+              {c.name}
+            </Button>
+            {!usedConceptIds.has(c.id) && (
+              <Tooltip label="Delete this concept — no motifs are tagged to it">
+                <CloseButton size="sm" onClick={() => deleteConcept(c.id)} />
+              </Tooltip>
+            )}
+          </Group>
         ))}
       </Group>
       {groups.length === 0 ? (
