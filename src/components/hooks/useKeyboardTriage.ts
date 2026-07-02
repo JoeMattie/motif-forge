@@ -4,13 +4,19 @@ import { engine } from '../../audio/engine'
 import { effectiveTempo } from '../../store/appState'
 import { useAppDispatch, useAppState } from '../../store/AppContext'
 
+/**
+ * Only text-entry controls count as typing targets. Mantine renders many
+ * click-targets as hidden checkbox/radio inputs (SegmentedControl, Rating,
+ * Chip, Checkbox) which keep focus after a click — those must NOT swallow
+ * triage keys. preventDefault below stops their native key behavior, so
+ * arrows/space always mean triage while the grid is active.
+ */
+const TEXT_INPUT_TYPES = new Set(['text', 'search', 'url', 'tel', 'email', 'password', 'number'])
+
 function isTypingTarget(t: EventTarget | null): boolean {
-  return (
-    t instanceof HTMLInputElement ||
-    t instanceof HTMLTextAreaElement ||
-    t instanceof HTMLSelectElement ||
-    (t instanceof HTMLElement && t.isContentEditable)
-  )
+  if (t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return true
+  if (t instanceof HTMLInputElement) return TEXT_INPUT_TYPES.has(t.type)
+  return t instanceof HTMLElement && t.isContentEditable
 }
 
 /**

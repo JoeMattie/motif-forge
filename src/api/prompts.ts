@@ -3,22 +3,7 @@ import { beatsPerBar, scalePitchClasses, MODES } from '../core/theory'
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
-const SCHEMA_BLOCK = `{
-  "motifs": [
-    {
-      "name": "short evocative name",
-      "parts": [
-        { "name": "lead", "instrument": "synth", "preset": { "oscillator": "sawtooth", "envelope": { "attack": 0.01, "decay": 0.2, "sustain": 0.5, "release": 0.3 } } },
-        { "name": "pad", "instrument": "strings" }
-      ],
-      "notes": [
-        { "pitch": 62, "startBeat": 0, "durationBeats": 0.5, "velocity": 96, "part": 0 }
-      ],
-      "key": "D", "mode": "dorian", "bars": 4, "timeSig": "4/4",
-      "rationale": "one sentence on the contour/intent"
-    }
-  ]
-}`
+const SCHEMA_BLOCK = `{"motifs":[{"name":"short evocative name","parts":[{"name":"lead","instrument":"synth","preset":{"oscillator":"sawtooth","envelope":{"attack":0.01,"decay":0.2,"sustain":0.5,"release":0.3}}},{"name":"pad","instrument":"strings"}],"notes":[{"pitch":62,"startBeat":0,"durationBeats":0.5,"velocity":96,"part":0}],"key":"D","mode":"dorian","bars":4,"timeSig":"4/4","rationale":"one sentence on the contour/intent"}]}`
 
 const INSTRUMENT_RULES = `- Instrumentation: each motif declares 1-4 "parts" and each note carries a "part" index. Available instruments: "synth" (a polysynth you can sound-design), "piano" (sampled grand), "epiano" (sampled electric piano), "marimba", "strings" (sustained ensemble — good for pads), "drums" (percussion). Choose instruments that serve the intent; a single part is fine for pure melodies.
 - Synth presets: parts with instrument "synth" may include a "preset" — oscillator one of "sine" | "triangle" | "sawtooth" | "square", plus an ADSR envelope (attack/decay/release in seconds 0-2, sustain 0-1). Design the patch to fit the part's role: e.g. soft sine pads (slow attack, high sustain), plucky square leads (fast attack, low sustain). Omit the preset for a plain default.
@@ -34,7 +19,7 @@ const SHARED_TAIL_RULES = `- At least 3 notes per motif; velocities 1-127 shaped
 - Vary rhythm ACROSS the batch: no two motifs with the same rhythmic profile, and avoid runs of straight eighth notes unless the brief asks for them. Mix note lengths, use rests deliberately, syncopate some candidates.
 - Land each phrase ending deliberately: on a stable degree (1, 3, 5) for resolution, or an intentionally unstable one if the brief calls for tension.
 
-OUTPUT: raw JSON only, exactly matching this schema — no prose, no markdown fences. Your first character must be "{".
+OUTPUT: raw MINIFIED JSON only, exactly matching this schema — no prose, no markdown fences, no indentation or newlines (whitespace wastes your output budget; a pretty-printed response gets truncated). Your first character must be "{".
 ${SCHEMA_BLOCK}`
 
 function hardRules(

@@ -167,12 +167,20 @@ export function createSmplrInstrument(
     sound === 'piano'
       ? SplendidGrandPiano(ctx, options)
       : Soundfont(ctx, { ...options, instrument: SOUNDFONT_NAMES[sound] })
+  // smplr's stop() only silences voices that have already started; notes still
+  // in its internal scheduler queue keep firing. Each start() returns a stop
+  // function that also cancels the queued event — collect and fire them all.
+  let noteStops: ((time?: number) => void)[] = []
   return {
     ready: inst.ready,
     noteOn: (pitch, velocity, timeSec, durationSec) => {
-      inst.start({ note: pitch, velocity, time: timeSec, duration: durationSec })
+      noteStops.push(inst.start({ note: pitch, velocity, time: timeSec, duration: durationSec }))
     },
-    stopAll: () => inst.stop(),
+    stopAll: () => {
+      for (const stopNote of noteStops) stopNote()
+      noteStops = []
+      inst.stop()
+    },
     dispose: () => inst.stop(),
   }
 }

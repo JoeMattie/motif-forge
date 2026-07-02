@@ -84,8 +84,10 @@ export function GenerationPanel() {
       includeRhythm,
     }
     const label = concept.trim() || `${key} ${mode}`
-    // Single call for small batches; split above 10 so JSON fits max_tokens.
-    const chunks = count <= 10 ? [count] : [Math.ceil(count / 2), Math.floor(count / 2)]
+    // Polyphonic motif JSON is bulky — cap each call at 5 motifs so the
+    // response fits max_tokens; the queue runs chunks concurrently.
+    const chunks: number[] = []
+    for (let left = count; left > 0; left -= 5) chunks.push(Math.min(5, left))
     for (const chunk of chunks) {
       queueBatch(chunk, label, () => generateBatch(brief, chunk))
     }
@@ -189,7 +191,7 @@ export function GenerationPanel() {
                 Generate 5
               </Button>
             </Tooltip>
-            <Tooltip label="Queue two batches of 10 — builds toward a big pool to triage">
+            <Tooltip label="Queue four batches of 5 — builds toward a big pool to triage">
               <Button onClick={() => generate(20)}>Generate 20</Button>
             </Tooltip>
             <span className="spacer" />

@@ -25,6 +25,7 @@ interface EngineSnapshot {
 interface ActiveInstrument {
   inst: Instrument
   transient: boolean // per-playback (Tone synth) — dispose on stop
+  gain?: GainNode // cached smplr output — hard-muted on stop to cut release tails
 }
 
 /**
@@ -36,7 +37,7 @@ class AudioEngine {
   private ctx: AudioContext | null = null
   private toneCtx: Tone.Context | null = null
   private masterInput: GainNode | null = null
-  private smplrCache = new Map<Sound, Instrument>()
+  private smplrCache = new Map<Sound, { inst: Instrument; gain: GainNode }>()
 
   private listeners = new Set<() => void>()
   private snapshot: EngineSnapshot = { playingMotifId: null, loading: false }
@@ -68,13 +69,17 @@ class AudioEngine {
       return { inst: createDrumKit(this.toneCtx!, playGain), transient: true }
     }
     // Sampled instruments are expensive (network + decode): cache for the
-    // life of the context, connected straight to the master chain.
-    let inst = this.smplrCache.get(part.instrument)
-    if (!inst) {
-      inst = createSmplrInstrument(part.instrument, this.ctx!, this.masterInput!)
-      this.smplrCache.set(part.instrument, inst)
+    // life of the context. Each gets its own gain into the master chain so
+    // stop can mute it instantly (release tails decay silently); the gain is
+    // restored just before the next playback that uses it.
+    let entry = this.smplrCache.get(part.instrument)
+    if (!entry) {
+      const gain = this.ctx!.createGain()
+      gain.connect(this.masterInput!)
+      entry = { inst: createSmplrInstrument(part.instrument, this.ctx!, gain), gain }
+      this.smplrCache.set(part.instrument, entry)
     }
-    return { inst, transient: false }
+    return { inst: entry.inst, transient: false, gain: entry.gain }
   }
 
   play(motif: Motif, opts: PlayOptions): void {
@@ -105,6 +110,14 @@ class AudioEngine {
 
       const t0 = ctx.currentTime + 0.08
       this.startTime = t0
+      // Un-mute cached instruments right before their first note; anything
+      // still decaying from a previous stop stays silent until then.
+      for (const a of active) {
+        if (a.gain) {
+          a.gain.gain.cancelScheduledValues(0)
+          a.gain.gain.setValueAtTime(1, Math.max(ctx.currentTime, t0 - 0.02))
+        }
+      }
       const endTime = scheduleMotif(
         active.map((a) => a.inst),
         motif,
@@ -145,8 +158,14 @@ class AudioEngine {
       clearTimeout(this.endTimer)
       this.endTimer = null
     }
-    for (const { inst, transient } of this.active) {
+    for (const { inst, transient, gain } of this.active) {
       inst.stopAll()
+      if (gain && this.ctx) {
+        const t = this.ctx.currentTime
+        gain.gain.cancelScheduledValues(0)
+        gain.gain.setValueAtTime(gain.gain.value, t)
+        gain.gain.linearRampToValueAtTime(0, t + 0.015)
+      }
       if (transient) window.setTimeout(() => inst.dispose(), 150)
     }
     this.active = []

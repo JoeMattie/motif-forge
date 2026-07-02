@@ -10,7 +10,9 @@ import {
 import { validateBatch, type ValidationResult } from '../core/validate'
 import { newId } from '../core/ids'
 
-const MAX_TOKENS = 8000
+// Sized for ~5 polyphonic motifs of minified JSON (multi-part + drums can run
+// ~2k tokens each). Callers chunk larger requests down to 5 per call.
+const MAX_TOKENS = 16000
 
 async function runBatch(
   prompt: string,
