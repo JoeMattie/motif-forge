@@ -90,7 +90,7 @@ export function GenerationPanel() {
       {open && (
         <div className="panel-body">
           <div className="field-row">
-            <label>
+            <label title="Tonal center all candidates are written in">
               key
               <select value={key} onChange={(e) => setKey(e.target.value)}>
                 {KEYS.map((k) => (
@@ -98,7 +98,7 @@ export function GenerationPanel() {
                 ))}
               </select>
             </label>
-            <label>
+            <label title="Scale flavor: ionian = major, aeolian = natural minor; dorian/mixolydian sit between, phrygian/locrian are darker, lydian brighter">
               mode
               <select value={mode} onChange={(e) => setMode(e.target.value as Mode)}>
                 {MODES.map((m) => (
@@ -106,7 +106,7 @@ export function GenerationPanel() {
                 ))}
               </select>
             </label>
-            <label>
+            <label title="BPM stored on each candidate; the transport bar can override during audition">
               tempo
               <input
                 type="number"
@@ -116,7 +116,7 @@ export function GenerationPanel() {
                 onChange={(e) => setTempo(Number(e.target.value))}
               />
             </label>
-            <label>
+            <label title="Phrase length in bars of 4/4 — candidates must fill it exactly">
               bars
               <select value={bars} onChange={(e) => setBars(Number(e.target.value))}>
                 {[2, 4, 8].map((b) => (
@@ -126,14 +126,17 @@ export function GenerationPanel() {
                 ))}
               </select>
             </label>
-            <label>
+            <label title="Lead: one clear melodic line with occasional chords (≤4 voices). Poly: chords, pads, and counterpoint welcome (≤6 voices, up to 4 parts)">
               texture
               <select value={texture} onChange={(e) => setTexture(e.target.value as Texture)}>
                 <option value="lead">lead + light harmony</option>
                 <option value="poly">freely polyphonic</option>
               </select>
             </label>
-            <label className="check">
+            <label
+              className="check"
+              title="Every candidate includes a drum-kit part (GM percussion) grooving under the melodic material"
+            >
               <input
                 type="checkbox"
                 checked={includeRhythm}
@@ -141,7 +144,10 @@ export function GenerationPanel() {
               />
               rhythm part
             </label>
-            <label className="check">
+            <label
+              className="check"
+              title="Allow notes outside the chosen key/mode (passing tones, color notes). Off = strictly in-scale; out-of-scale notes only warn, never discard"
+            >
               <input
                 type="checkbox"
                 checked={allowChromatic}
@@ -151,7 +157,10 @@ export function GenerationPanel() {
             </label>
           </div>
           <div className="field-row">
-            <label className="grow">
+            <label
+              className="grow"
+              title="Song concept / leitmotif tag — candidates are grouped under it in the Concepts view"
+            >
               concept
               <input
                 type="text"
@@ -161,7 +170,10 @@ export function GenerationPanel() {
               />
             </label>
           </div>
-          <label className="grow">
+          <label
+            className="grow"
+            title="Free-text direction: contour, rhythmic character, emotional intent, references — anything the composer should honor"
+          >
             brief
             <textarea
               rows={3}
@@ -171,10 +183,18 @@ export function GenerationPanel() {
             />
           </label>
           <div className="field-row">
-            <button className="btn primary" onClick={() => generate(5)}>
+            <button
+              className="btn primary"
+              onClick={() => generate(5)}
+              title="Queue one batch of 5 candidates matching the brief"
+            >
               Generate 5
             </button>
-            <button className="btn" onClick={() => generate(20)}>
+            <button
+              className="btn"
+              onClick={() => generate(20)}
+              title="Queue two batches of 10 — builds toward a big pool to triage"
+            >
               Generate 20
             </button>
             <span className="spacer" />

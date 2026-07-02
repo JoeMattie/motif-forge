@@ -47,6 +47,14 @@ export function TriageGrid() {
             key={f}
             className={`btn chip${filter === f ? ' active' : ''}`}
             onClick={() => setFilter(f)}
+            title={
+              {
+                all: 'Everything except discards',
+                unrated: 'Still to triage — no rating yet',
+                rated: 'Rated 1–5 stars',
+                discarded: 'Soft-deleted with x — press u to undo the most recent discard',
+              }[f]
+            }
           >
             {f} ({counts[f]})
           </button>

@@ -81,19 +81,47 @@ export function MutationPanel({ motif }: { motif: Motif }) {
       </div>
 
       <div className="transform-grid">
-        <button className="btn" onClick={() => apply({ type: 'inversion' })}>inversion</button>
-        <button className="btn" onClick={() => apply({ type: 'retrograde' })}>retrograde</button>
-        <button className="btn" onClick={() => apply({ type: 'retrogradeInversion' })}>retro-inversion</button>
+        <button
+          className="btn"
+          onClick={() => apply({ type: 'inversion' })}
+          title="Flip the contour upside down around the first note — rises become falls"
+        >
+          inversion
+        </button>
+        <button
+          className="btn"
+          onClick={() => apply({ type: 'retrograde' })}
+          title="Play the motif backwards in time"
+        >
+          retrograde
+        </button>
+        <button
+          className="btn"
+          onClick={() => apply({ type: 'retrogradeInversion' })}
+          title="Backwards and upside down — the most disguised transform"
+        >
+          retro-inversion
+        </button>
         <button
           className="btn"
           onClick={() => apply({ type: 'augment' })}
-          title={augmentWarning ? `Result will be ${motif.bars * 2} bars (beyond the 2–8 bar range)` : undefined}
+          title={`Double every duration — same notes at half speed, twice the bars${augmentWarning ? ` (result will be ${motif.bars * 2} bars, beyond the 2–8 bar range)` : ''}`}
         >
           augment ×2{augmentWarning ? ' ⚠' : ''}
         </button>
-        <button className="btn" onClick={() => apply({ type: 'diminish' })}>diminish ×0.5</button>
+        <button
+          className="btn"
+          onClick={() => apply({ type: 'diminish' })}
+          title="Halve every duration — same notes at double speed, half the bars"
+        >
+          diminish ×0.5
+        </button>
         <span className="transform-combo">
-          <button className="btn" onClick={() => apply({ type: 'transpose', semitones: transposeBy })}>
+          <button
+            className="btn"
+            onClick={() => apply({ type: 'transpose', semitones: transposeBy })}
+            title="Shift every pitch by the chosen number of semitones (+12 = up an octave)"
+          >
             transpose
           </button>
           <input
@@ -102,13 +130,22 @@ export function MutationPanel({ motif }: { motif: Motif }) {
             max={12}
             value={transposeBy}
             onChange={(e) => setTransposeBy(Number(e.target.value))}
+            title="Semitones to shift by (negative = down)"
           />
         </span>
         <span className="transform-combo">
-          <button className="btn" onClick={() => apply({ type: 'modeSwap', targetMode })}>
+          <button
+            className="btn"
+            onClick={() => apply({ type: 'modeSwap', targetMode })}
+            title="Recolor the motif: keep each note's scale degree but re-spell it in the target mode (e.g. dorian → phrygian darkens it)"
+          >
             mode swap
           </button>
-          <select value={targetMode} onChange={(e) => setTargetMode(e.target.value as Mode)}>
+          <select
+            value={targetMode}
+            onChange={(e) => setTargetMode(e.target.value as Mode)}
+            title="Mode to remap into"
+          >
             {MODES.filter((m) => m !== motif.mode).map((m) => (
               <option key={m}>{m}</option>
             ))}
@@ -119,6 +156,7 @@ export function MutationPanel({ motif }: { motif: Motif }) {
             className="btn"
             disabled={selectedNotes.size === 0}
             onClick={() => apply({ type: 'octaveDisplace', noteIndices: [...selectedNotes], direction: 1 })}
+            title="Move the notes selected on the roll above up one octave (click notes to select them)"
           >
             8va ↑
           </button>
@@ -126,6 +164,7 @@ export function MutationPanel({ motif }: { motif: Motif }) {
             className="btn"
             disabled={selectedNotes.size === 0}
             onClick={() => apply({ type: 'octaveDisplace', noteIndices: [...selectedNotes], direction: -1 })}
+            title="Move the notes selected on the roll above down one octave (click notes to select them)"
           >
             8vb ↓
           </button>

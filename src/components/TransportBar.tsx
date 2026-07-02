@@ -73,7 +73,10 @@ export function TransportBar() {
         />
         force
       </label>
-      <label className="transport-control">
+      <label
+        className="transport-control"
+        title="Audition everything at one BPM instead of each motif's own tempo — useful for fair side-by-side comparison"
+      >
         <input
           type="checkbox"
           checked={fixed}
@@ -100,7 +103,7 @@ export function TransportBar() {
           <span className="bpm">{transport.tempoMode} bpm</span>
         </label>
       )}
-      <label className="transport-control">
+      <label className="transport-control" title="Metronome click during playback (accented on beat 1)">
         <input
           type="checkbox"
           checked={transport.metronome}
@@ -110,7 +113,10 @@ export function TransportBar() {
         />
         click
       </label>
-      <label className="transport-control">
+      <label
+        className="transport-control"
+        title="Sustained root note under playback so you hear each motif against its tonal center (included in WAV export)"
+      >
         <input
           type="checkbox"
           checked={transport.drone}
