@@ -10,8 +10,37 @@ Everything is hand-rolled and dependency-free by design: the synth is raw Web Au
 
 ```sh
 npm install
-npm run dev     # http://localhost:5173
+cp .env.example .env.local   # then fill in your Anthropic API key (or see "API access" below)
+npm run dev                  # http://localhost:5173
 ```
+
+Generation and LLM mutations call the Anthropic API through a dev-server proxy that injects your credentials server-side (see `vite.config.ts`) — they never reach browser code. Everything else (playback, transforms, export, library) works without credentials.
+
+## API access
+
+Two ways to give the dev-server proxy credentials:
+
+**Option A — static API key.** Put a key from [console.anthropic.com](https://console.anthropic.com) in `.env.local`:
+
+```sh
+cp .env.example .env.local   # then paste ANTHROPIC_API_KEY=sk-ant-...
+npm run dev
+```
+
+**Option B — `ant` CLI (no static key to manage).** The [Anthropic CLI](https://platform.claude.com/docs/en/api/sdks/cli) authenticates via a browser OAuth flow and mints short-lived tokens:
+
+```sh
+# one-time setup
+brew install anthropics/tap/ant
+xattr -d com.apple.quarantine "$(brew --prefix)/bin/ant"   # macOS Gatekeeper
+ant auth login               # opens a browser
+
+# each dev session — exports ANTHROPIC_AUTH_TOKEN for the proxy
+set -a; eval "$(ant auth print-credentials --env)"; set +a
+npm run dev
+```
+
+The proxy prefers `ANTHROPIC_API_KEY` when both are present. OAuth tokens are short-lived — if generation starts returning 401s mid-session, re-run the `print-credentials` line and restart the dev server. `ant auth status` shows which credential source is active, and `ant` is also handy on its own (e.g. `ant models list`, `ant messages create` for testing prompts from the shell).
 
 `npm run build` runs the TypeScript strict check and produces a production build in `dist/`.
 
