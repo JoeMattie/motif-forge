@@ -25,6 +25,16 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/anthropic/, ''),
           headers,
+          configure: (proxy) => {
+            // Strip browser-identifying headers: if Origin is forwarded, the
+            // API treats it as a direct browser call and rejects it unless the
+            // dangerous-direct-browser-access opt-in is set. This is a
+            // server-mediated request, so present it as one.
+            proxy.on('proxyReq', (proxyReq) => {
+              proxyReq.removeHeader('origin')
+              proxyReq.removeHeader('referer')
+            })
+          },
         },
       },
     },

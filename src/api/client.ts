@@ -32,6 +32,11 @@ export async function callClaude(prompt: string, maxTokens: number): Promise<Cla
   }
   if (!response.ok) {
     const body = await response.text().catch(() => '')
+    if (body.includes('credit balance is too low')) {
+      throw new Error(
+        'Your Anthropic account has no API credits — add credits under Plans & Billing at console.anthropic.com',
+      )
+    }
     throw new Error(`API error ${response.status}: ${body.slice(0, 300)}`)
   }
   const data = (await response.json()) as { content: ContentBlock[]; stop_reason: string }
