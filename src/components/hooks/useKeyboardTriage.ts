@@ -66,6 +66,8 @@ export function useKeyboardTriage(visibleMotifs: Motif[], columns: number, enabl
               tempo: effectiveTempo(state.transport, current),
               metronome: state.transport.metronome,
               drone: state.transport.drone,
+              sound: state.transport.sound,
+              forceSound: state.transport.forceSound,
             })
           }
           break

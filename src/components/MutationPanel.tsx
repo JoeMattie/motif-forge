@@ -3,6 +3,8 @@ import type { Mode, Motif } from '../types'
 import { MODES } from '../core/theory'
 import { applyTransform, type Transform } from '../core/transforms'
 import { mutateBatch } from '../api/generate'
+import { enqueue } from '../api/queue'
+import { SURPRISE_MUTATION_BRIEF } from '../api/prompts'
 import { useAppDispatch, useAppState } from '../store/AppContext'
 import { PianoRoll } from './PianoRoll'
 import { MotifCard } from './MotifCard'
@@ -16,6 +18,7 @@ export function MutationPanel({ motif }: { motif: Motif }) {
   const [transposeBy, setTransposeBy] = useState(2)
   const [targetMode, setTargetMode] = useState<Mode>(motif.mode === 'dorian' ? 'phrygian' : 'dorian')
   const [brief, setBrief] = useState('')
+  const [lockRhythm, setLockRhythm] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
@@ -34,12 +37,14 @@ export function MutationPanel({ motif }: { motif: Motif }) {
     })
   }
 
-  const runLlmMutation = async () => {
-    if (!brief.trim()) return
+  const runLlmMutation = async (mutationBrief: string) => {
+    if (!mutationBrief.trim()) return
     setBusy(true)
     setMessage(null)
     try {
-      const result = await mutateBatch(motif, brief.trim(), 10)
+      const result = await enqueue(() =>
+        mutateBatch(motif, mutationBrief.trim(), 5, { lockRhythm }),
+      )
       dispatch({ type: 'MOTIFS_ADDED', motifs: result.valid })
       setMessage(
         `${result.valid.length} children added${result.droppedCount ? `, ${result.droppedCount} dropped` : ''}`,
@@ -130,13 +135,35 @@ export function MutationPanel({ motif }: { motif: Motif }) {
       <div className="llm-mutation">
         <textarea
           rows={2}
-          placeholder='LLM mutation brief… e.g. "keep the first bar intact but resolve differently", "make it more syncopated"'
+          placeholder='LLM mutation brief… e.g. "keep the first bar intact but resolve differently", "add a drum groove", "make it more syncopated"'
           value={brief}
           onChange={(e) => setBrief(e.target.value)}
         />
-        <button className="btn primary" disabled={busy || !brief.trim()} onClick={() => void runLlmMutation()}>
-          {busy ? 'mutating…' : '10 LLM variations'}
-        </button>
+        <label className="check dim" title="Children keep the parent's exact note timings — only pitches (and velocities) change">
+          <input
+            type="checkbox"
+            checked={lockRhythm}
+            onChange={(e) => setLockRhythm(e.target.checked)}
+          />
+          lock rhythm
+        </label>
+        <div className="field-row">
+          <button
+            className="btn primary"
+            disabled={busy || !brief.trim()}
+            onClick={() => void runLlmMutation(brief)}
+          >
+            {busy ? 'mutating…' : '5 LLM variations'}
+          </button>
+          <button
+            className="btn surprise"
+            disabled={busy}
+            onClick={() => void runLlmMutation(SURPRISE_MUTATION_BRIEF)}
+            title="Free rein: reinterpret texture, instrumentation, rhythm, or mood while keeping a recognizable kernel"
+          >
+            🎲 Surprise me
+          </button>
+        </div>
         {message && <span className="dim">{message}</span>}
       </div>
 

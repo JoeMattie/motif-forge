@@ -59,6 +59,7 @@ export function PianoRoll({ motif, height = 96, selectedNotes, onToggleNote }: P
       {motif.notes.map((n, i) => {
         const outOfScale = !isInScale(n.pitch, motif.key, motif.mode)
         const selected = selectedNotes?.has(i) ?? false
+        const part = n.part ?? 0
         return (
           <rect
             key={i}
@@ -67,7 +68,7 @@ export function PianoRoll({ motif, height = 96, selectedNotes, onToggleNote }: P
             width={n.durationBeats}
             height={1}
             rx={0.08}
-            className={`roll-note${outOfScale ? ' chromatic' : ''}${selected ? ' selected' : ''}${interactive ? ' clickable' : ''}`}
+            className={`roll-note part-${part}${outOfScale ? ' chromatic' : ''}${selected ? ' selected' : ''}${interactive ? ' clickable' : ''}`}
             opacity={0.55 + (n.velocity / 127) * 0.45}
             onClick={interactive ? () => onToggleNote(i) : undefined}
           />

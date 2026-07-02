@@ -5,6 +5,14 @@ export function useIsPlaying(motifId: string): boolean {
   return useSyncExternalStore(engine.subscribe, () => engine.getSnapshot().playingMotifId === motifId)
 }
 
+/** True while this motif's instrument samples are still loading before playback. */
+export function useIsLoading(motifId: string): boolean {
+  return useSyncExternalStore(engine.subscribe, () => {
+    const s = engine.getSnapshot()
+    return s.playingMotifId === motifId && s.loading
+  })
+}
+
 /**
  * Drives an SVG playhead line via a ref while this motif is playing.
  * One rAF loop on the playing card only; no React state per frame.

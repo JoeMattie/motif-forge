@@ -3,6 +3,25 @@ export interface Note {
   startBeat: number
   durationBeats: number
   velocity: number // 1-127
+  part?: number // index into Motif.parts; absent = part 0
+}
+
+export type Sound = 'synth' | 'piano' | 'epiano' | 'marimba' | 'strings'
+
+/** What a part can play: any pickable sound, or a GM-pitch drum kit. */
+export type PartInstrument = Sound | 'drums'
+
+/** LLM-designed patch for the Tone.js synth (instrument: 'synth' only). */
+export interface SynthPreset {
+  oscillator: 'sine' | 'triangle' | 'sawtooth' | 'square'
+  envelope: { attack: number; decay: number; sustain: number; release: number }
+}
+
+/** One voice/layer of a polyphonic motif with its own instrument. */
+export interface Part {
+  name: string
+  instrument: PartInstrument
+  preset?: SynthPreset
 }
 
 export type Mode =
@@ -22,10 +41,13 @@ export type MotifSource =
 
 export type Rating = 0 | 1 | 2 | 3 | 4 | 5
 
+export type Texture = 'lead' | 'poly'
+
 export interface Motif {
   id: string
   name: string
-  notes: Note[] // sorted by startBeat; monophonic
+  notes: Note[] // sorted by startBeat; overlapping notes allowed (polyphonic)
+  parts: Part[] // instrument per part; empty = single part played with the transport sound
   key: string // "D", "Bb", "F#"
   mode: Mode
   bars: number
@@ -55,6 +77,8 @@ export interface GenerationBrief {
   concept: string
   text: string // free-text: contour, rhythmic character, emotional intent
   allowChromatic: boolean
+  texture: Texture // lead melody with light harmony vs free polyphony
+  includeRhythm: boolean // ask for a GM-pitch drums part
 }
 
 export function parentIdOf(m: Motif): string | null {

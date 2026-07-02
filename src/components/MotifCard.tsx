@@ -7,7 +7,7 @@ import { downloadBlob } from '../core/downloads'
 import { renderMotif } from '../audio/renderOffline'
 import { effectiveTempo } from '../store/appState'
 import { useAppDispatch, useAppState } from '../store/AppContext'
-import { useIsPlaying } from './hooks/usePlayhead'
+import { useIsLoading, useIsPlaying } from './hooks/usePlayhead'
 import { PianoRoll } from './PianoRoll'
 
 interface MotifCardProps {
@@ -20,6 +20,7 @@ export function MotifCard({ motif, selected, showConcept }: MotifCardProps) {
   const state = useAppState()
   const dispatch = useAppDispatch()
   const isPlaying = useIsPlaying(motif.id)
+  const isLoading = useIsLoading(motif.id)
   const cardRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -31,6 +32,8 @@ export function MotifCard({ motif, selected, showConcept }: MotifCardProps) {
     tempo,
     metronome: state.transport.metronome,
     drone: state.transport.drone,
+    sound: state.transport.sound,
+    forceSound: state.transport.forceSound,
   }
 
   const exportMidi = () => {
@@ -41,7 +44,11 @@ export function MotifCard({ motif, selected, showConcept }: MotifCardProps) {
   }
 
   const exportWav = async () => {
-    const buf = await renderMotif(motif, tempo, { drone: state.transport.drone })
+    const buf = await renderMotif(motif, tempo, {
+      drone: state.transport.drone,
+      sound: state.transport.sound,
+      forceSound: state.transport.forceSound,
+    })
     downloadBlob(audioBufferToWavBlob(buf), midiFilename(motif, tempo).replace(/\.mid$/, '.wav'))
   }
 
@@ -62,6 +69,15 @@ export function MotifCard({ motif, selected, showConcept }: MotifCardProps) {
         </span>
       </div>
       <PianoRoll motif={motif} />
+      {motif.parts.length > 1 && (
+        <div className="part-legend">
+          {motif.parts.map((p, i) => (
+            <span key={i} className={`part-chip part-${i}`} title={p.preset ? `${p.name}: ${p.preset.oscillator} synth` : p.name}>
+              {p.name}·{p.instrument}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="card-foot">
         <button
           className="btn play-btn"
@@ -72,7 +88,7 @@ export function MotifCard({ motif, selected, showConcept }: MotifCardProps) {
           }}
           title="Play/stop (Space)"
         >
-          {isPlaying ? '■' : '▶'}
+          {isLoading ? '…' : isPlaying ? '■' : '▶'}
         </button>
         <span className="rating">
           {motif.rating > 0 ? '★'.repeat(motif.rating) + '☆'.repeat(5 - motif.rating) : '·····'}

@@ -55,7 +55,7 @@ export function TriageGrid() {
           ←→↑↓ navigate · space play · 1–5 rate · x discard · u undo
         </span>
       </div>
-      {visible.length === 0 ? (
+      {visible.length === 0 && state.pending.length === 0 ? (
         <div className="empty">
           {state.motifs.size === 0
             ? 'No motifs yet — write a brief above and generate a batch.'
@@ -65,6 +65,13 @@ export function TriageGrid() {
         <div className="motif-grid" ref={gridRef}>
           {visible.map((m) => (
             <MotifCard key={m.id} motif={m} selected={m.id === state.selectedId} />
+          ))}
+          {state.pending.map((b) => (
+            <div key={b.id} className="motif-card pending-card">
+              <span className="pending-label">
+                generating {b.count} · {b.label}
+              </span>
+            </div>
           ))}
         </div>
       )}

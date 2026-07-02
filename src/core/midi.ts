@@ -1,7 +1,17 @@
-import type { Motif } from '../types'
+import type { Motif, PartInstrument } from '../types'
 import { beatsPerBar } from './theory'
 
 const TPQN = 480
+
+/** General MIDI program per instrument (synth → GM 81 "Lead 1 (square)").
+ * Drums have no program — they live on channel 9 per the GM spec. */
+const GM_PROGRAM: Record<Exclude<PartInstrument, 'drums'>, number> = {
+  synth: 80, // 0-indexed: GM program 81
+  piano: 0, // Acoustic Grand Piano
+  epiano: 4, // Electric Piano 1
+  marimba: 12,
+  strings: 48, // String Ensemble 1
+}
 
 /** Variable-length quantity: 7 bits per byte, MSB group first, continuation bit on all but last. */
 export function writeVLQ(value: number): number[] {
@@ -42,11 +52,26 @@ export function motifToMidi(motif: Motif, tempo: number): Uint8Array {
     bytes: [0xff, 0x58, 0x04, num, Math.round(Math.log2(den)), 24, 8],
   })
 
+  // One MIDI channel per part with its GM program; drum parts go to channel 9
+  // (the GM percussion channel); partless motifs use channel 0.
+  const parts = motif.parts ?? []
+  const channelOf: number[] = []
+  let melodicCh = 0
+  for (const p of parts) {
+    if (p.instrument === 'drums') {
+      channelOf.push(9)
+    } else {
+      events.push({ tick: 0, order: -1, bytes: [0xc0 | melodicCh, GM_PROGRAM[p.instrument]] })
+      channelOf.push(melodicCh++)
+    }
+  }
+
   for (const n of motif.notes) {
+    const ch = parts.length > 0 ? channelOf[Math.min(n.part ?? 0, parts.length - 1)] : 0
     const onTick = Math.round(n.startBeat * TPQN)
     const offTick = Math.round((n.startBeat + n.durationBeats) * TPQN)
-    events.push({ tick: onTick, order: 1, bytes: [0x90, n.pitch, n.velocity] })
-    events.push({ tick: offTick, order: 0, bytes: [0x80, n.pitch, 0x40] })
+    events.push({ tick: onTick, order: 1, bytes: [0x90 | ch, n.pitch, n.velocity] })
+    events.push({ tick: offTick, order: 0, bytes: [0x80 | ch, n.pitch, 0x40] })
   }
 
   const endTick = Math.round(motif.bars * beatsPerBar(motif.timeSig) * TPQN)

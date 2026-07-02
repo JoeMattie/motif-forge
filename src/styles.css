@@ -11,6 +11,9 @@
   --danger: #c45b5b;
   --note: #7aa2d4;
   --note-chromatic: #d9a441;
+  --part-1: #7fc98f;
+  --part-2: #b48ac2;
+  --part-3: #d48a9b;
   font-family: 'SF Mono', ui-monospace, 'Cascadia Code', Menlo, monospace;
   font-size: 13px;
 }
@@ -304,6 +307,42 @@ label.grow {
   opacity: 0.5;
 }
 
+/* Pulsing placeholder for a queued generation batch */
+.motif-card.pending-card {
+  align-items: center;
+  justify-content: center;
+  min-height: 168px;
+  border-style: dashed;
+  cursor: default;
+  animation: pending-pulse 1.3s ease-in-out infinite;
+}
+
+.pending-label {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+@keyframes pending-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    border-color: var(--border);
+  }
+  50% {
+    opacity: 1;
+    border-color: var(--accent-dim);
+  }
+}
+
+.btn.surprise {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.btn.surprise:hover:not(:disabled) {
+  background: var(--warn);
+  color: #1a150a;
+}
+
 .card-head {
   display: flex;
   justify-content: space-between;
@@ -327,6 +366,33 @@ label.grow {
   display: flex;
   align-items: center;
   gap: 0.45rem;
+}
+
+.part-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  font-size: 10px;
+}
+
+.part-chip {
+  color: var(--text-dim);
+}
+.part-chip::before {
+  content: '●';
+  margin-right: 0.25em;
+}
+.part-chip.part-0::before {
+  color: var(--note);
+}
+.part-chip.part-1::before {
+  color: var(--part-1);
+}
+.part-chip.part-2::before {
+  color: var(--part-2);
+}
+.part-chip.part-3::before {
+  color: var(--part-3);
 }
 
 .play-btn {
@@ -374,8 +440,18 @@ label.grow {
   vector-effect: non-scaling-stroke;
 }
 
-.roll-note {
+.roll-note,
+.roll-note.part-0 {
   fill: var(--note);
+}
+.roll-note.part-1 {
+  fill: var(--part-1);
+}
+.roll-note.part-2 {
+  fill: var(--part-2);
+}
+.roll-note.part-3 {
+  fill: var(--part-3);
 }
 .roll-note.chromatic {
   fill: var(--note-chromatic);

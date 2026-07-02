@@ -1,4 +1,6 @@
 import { engine } from '../audio/engine'
+import { SOUNDS } from '../audio/instruments'
+import type { Sound } from '../types'
 import { useAppDispatch, useAppState } from '../store/AppContext'
 import type { View } from '../store/appState'
 
@@ -42,6 +44,35 @@ export function TransportBar() {
         </span>
       )}
 
+      <label className="transport-control">
+        sound
+        <select
+          value={transport.sound}
+          onChange={(e) =>
+            dispatch({ type: 'SET_TRANSPORT', transport: { sound: e.target.value as Sound } })
+          }
+          title="Playback instrument (sampled sounds load from a CDN on first use)"
+        >
+          {SOUNDS.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label
+        className="transport-control"
+        title="Ignore each motif's own instrumentation and audition everything through the picked sound"
+      >
+        <input
+          type="checkbox"
+          checked={transport.forceSound}
+          onChange={(e) =>
+            dispatch({ type: 'SET_TRANSPORT', transport: { forceSound: e.target.checked } })
+          }
+        />
+        force
+      </label>
       <label className="transport-control">
         <input
           type="checkbox"

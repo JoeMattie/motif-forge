@@ -1,47 +1,28 @@
 import type { Motif } from '../types'
 import { beatsPerBar, keyToPitchClass, pitchToHz } from '../core/theory'
+import type { Instrument } from './instruments'
 
 /**
- * All scheduling targets BaseAudioContext so live playback (AudioContext) and
- * WAV export (OfflineAudioContext) share the exact same synth graph.
+ * Motif notes play through an Instrument (Tone synth or smplr samples — see
+ * instruments.ts). The master chain, metronome, and drone stay hand-rolled
+ * raw WebAudio against BaseAudioContext so they work identically in live
+ * playback and offline WAV rendering.
  */
 
-function scheduleNote(
-  ctx: BaseAudioContext,
-  dest: AudioNode,
-  pitch: number,
-  velocity: number,
-  t: number,
-  durationSec: number,
-): void {
-  const osc = ctx.createOscillator()
-  osc.type = 'triangle'
-  osc.frequency.value = pitchToHz(pitch)
-
-  const gain = ctx.createGain()
-  const peak = Math.pow(velocity / 127, 1.5) * 0.35
-  gain.gain.setValueAtTime(0, t)
-  gain.gain.linearRampToValueAtTime(peak, t + 0.005)
-  gain.gain.setTargetAtTime(peak * 0.3, t + 0.005, 0.08)
-  const noteEnd = t + durationSec
-  gain.gain.setTargetAtTime(0, noteEnd, 0.03)
-
-  osc.connect(gain).connect(dest)
-  osc.start(t)
-  osc.stop(noteEnd + 0.25)
-}
-
-/** Schedule every note of the motif from t0. Returns the end time in seconds. */
+/**
+ * Schedule every note of the motif from t0, routing each note to its part's
+ * instrument (instruments[note.part], clamped). Returns the end time in seconds.
+ */
 export function scheduleMotif(
-  ctx: BaseAudioContext,
-  dest: AudioNode,
+  instruments: Instrument[],
   motif: Motif,
   tempo: number,
   t0: number,
 ): number {
   const spb = 60 / tempo
   for (const n of motif.notes) {
-    scheduleNote(ctx, dest, n.pitch, n.velocity, t0 + n.startBeat * spb, n.durationBeats * spb)
+    const inst = instruments[Math.min(n.part ?? 0, instruments.length - 1)]
+    inst.noteOn(n.pitch, n.velocity, t0 + n.startBeat * spb, n.durationBeats * spb)
   }
   return t0 + motif.bars * beatsPerBar(motif.timeSig) * spb
 }

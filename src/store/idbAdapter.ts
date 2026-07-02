@@ -53,7 +53,8 @@ class IdbAdapter implements PersistenceAdapter {
     const motifs = await req(this.store('motifs', 'readonly').s.getAll() as IDBRequest<StoredMotif[]>)
     const concepts = await req(this.store('concepts', 'readonly').s.getAll() as IDBRequest<Concept[]>)
     return {
-      motifs: motifs.map(({ parentId: _parentId, ...m }) => m as Motif),
+      // Normalize records written before the polyphony/parts migration.
+      motifs: motifs.map(({ parentId: _parentId, ...m }) => ({ ...m, parts: m.parts ?? [] }) as Motif),
       concepts,
     }
   }

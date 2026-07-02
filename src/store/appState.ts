@@ -1,4 +1,4 @@
-import type { Concept, Motif, Rating } from '../types'
+import type { Concept, Motif, Rating, Sound } from '../types'
 
 export type View = 'triage' | 'library' | 'concepts'
 
@@ -6,11 +6,19 @@ export interface TransportState {
   tempoMode: 'motif' | number // follow the motif's tempo, or a fixed BPM
   metronome: boolean
   drone: boolean
+  sound: Sound
+  forceSound: boolean // ignore motif parts; play everything through `sound`
 }
 
 export interface GenerationStatus {
-  busy: boolean
   message: string | null // last result / error toast
+}
+
+/** A queued LLM batch awaiting results — rendered as a pulsing placeholder card. */
+export interface PendingBatch {
+  id: string
+  count: number
+  label: string
 }
 
 export interface AppState {
@@ -22,6 +30,7 @@ export interface AppState {
   view: View
   transport: TransportState
   generation: GenerationStatus
+  pending: PendingBatch[]
   lastDiscardedId: string | null
 }
 
@@ -32,8 +41,15 @@ export const initialState: AppState = {
   selectedId: null,
   mutationTargetId: null,
   view: 'triage',
-  transport: { tempoMode: 'motif', metronome: false, drone: false },
-  generation: { busy: false, message: null },
+  transport: {
+    tempoMode: 'motif',
+    metronome: false,
+    drone: false,
+    sound: 'synth',
+    forceSound: false,
+  },
+  generation: { message: null },
+  pending: [],
   lastDiscardedId: null,
 }
 
@@ -49,7 +65,8 @@ export type Action =
   | { type: 'SET_MUTATION_TARGET'; id: string | null }
   | { type: 'SET_VIEW'; view: View }
   | { type: 'SET_TRANSPORT'; transport: Partial<TransportState> }
-  | { type: 'GENERATION_STARTED' }
+  | { type: 'BATCH_QUEUED'; batch: PendingBatch }
+  | { type: 'BATCH_FINISHED'; id: string }
   | { type: 'GENERATION_FINISHED'; message: string }
   | { type: 'GENERATION_FAILED'; message: string }
   | { type: 'CLEAR_MESSAGE' }
@@ -101,14 +118,16 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, view: action.view, mutationTargetId: null }
     case 'SET_TRANSPORT':
       return { ...state, transport: { ...state.transport, ...action.transport } }
-    case 'GENERATION_STARTED':
-      return { ...state, generation: { busy: true, message: null } }
+    case 'BATCH_QUEUED':
+      return { ...state, pending: [...state.pending, action.batch] }
+    case 'BATCH_FINISHED':
+      return { ...state, pending: state.pending.filter((b) => b.id !== action.id) }
     case 'GENERATION_FINISHED':
-      return { ...state, generation: { busy: false, message: action.message } }
+      return { ...state, generation: { message: action.message } }
     case 'GENERATION_FAILED':
-      return { ...state, generation: { busy: false, message: action.message } }
+      return { ...state, generation: { message: action.message } }
     case 'CLEAR_MESSAGE':
-      return { ...state, generation: { ...state.generation, message: null } }
+      return { ...state, generation: { message: null } }
   }
 }
 
