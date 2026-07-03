@@ -2,7 +2,7 @@
 
 ## Context
 
-Greenfield build. The repo contains only [motif-forge-project-brief.md](/Users/joemattie/Desktop/motif-forge/motif-forge-project-brief.md) (the spec — source of truth) and CLAUDE.md. The app is a local-first SPA for generating ~100 melodic motif candidates via the Anthropic API, triaging them by ear with a keyboard-first UX, mutating survivors (deterministic + LLM), organizing them as leitmotifs by song concept, and exporting MIDI/WAV that the user feeds to Suno as seed audio.
+Greenfield build. The repo contains only [motif-forge-project-brief.md](motif-forge-project-brief.md) (the spec — source of truth) and CLAUDE.md. The app is a local-first SPA for generating ~100 melodic motif candidates via the Anthropic API, triaging them by ear with a keyboard-first UX, mutating survivors (deterministic + LLM), organizing them as leitmotifs by song concept, and exporting MIDI/WAV that the user feeds to Suno as seed audio.
 
 **Decisions made with the user:** Vite + React, full MVP scope (all 7 build steps). Derived decisions: TypeScript strict (unit-heavy numeric code — beats/ticks/semitones/degrees — and binary formats benefit most), standalone app → IndexedDB persistence, hand-rolled Web Audio synth (no Tone.js). Runtime deps: `react`, `react-dom` only; everything else (MIDI writer, WAV encoder, synth, IDB wrapper) hand-rolled per the brief's near-zero-dependency constraint.
 
