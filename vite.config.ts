@@ -18,6 +18,12 @@ export default defineConfig(({ mode }) => {
   }
   return {
     plugins: [react()],
+    // onnxruntime-web must NOT be esbuild-pre-bundled: the dep optimizer
+    // mangles its closure-compiled WebGPU/JSEP glue ("X.$b is not a
+    // function" at session creation in dev). Production builds are fine —
+    // this only affects the dev server.
+    optimizeDeps: { exclude: ['onnxruntime-web'] },
+    worker: { format: 'es' as const },
     server: {
       proxy: {
         '/api/anthropic': {
