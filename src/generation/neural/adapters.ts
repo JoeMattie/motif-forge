@@ -218,15 +218,23 @@ export function eventsToMotif(rows: number[][], tokenizer: MidiTokenizerV2): Raw
 
 /**
  * Trim a decoded motif to the requested window: drop prompt-material notes
- * before `fromBeat`, rebase the rest to beat 0, clamp everything into `bars`.
- * Used for continuations, where the keeper's own notes ride along in the
- * decoded rows.
+ * before `fromBeat`, rebase the rest to beat 0, drop whole blank bars the
+ * model sometimes opens with (a partial-bar pickup offset is kept — only
+ * full empty bars go), then clamp everything into `bars`. The blank-bar
+ * shift happens before the window clamp so content that would have sat past
+ * the window slides into it. Used for both fresh jobs (fromBeat 0) and
+ * continuations, where the keeper's own notes ride along in the decoded rows.
  */
 export function trimRawMotif(raw: RawMotif, fromBeat: number, bars: number): RawMotif {
-  const totalBeats = bars * beatsPerBar(raw.timeSig)
-  const notes = raw.notes
+  const bpb = beatsPerBar(raw.timeSig)
+  const totalBeats = bars * bpb
+  const kept = raw.notes
     .filter((n) => n.startBeat >= fromBeat - 1e-6)
     .map((n) => ({ ...n, startBeat: n.startBeat - fromBeat }))
+  const firstStart = kept.reduce((m, n) => Math.min(m, n.startBeat), Infinity)
+  const blankBeats = kept.length > 0 ? Math.floor(firstStart / bpb) * bpb : 0
+  const notes = kept
+    .map((n) => ({ ...n, startBeat: n.startBeat - blankBeats }))
     .filter((n) => n.startBeat < totalBeats - 1e-6)
     .map((n) => ({
       ...n,

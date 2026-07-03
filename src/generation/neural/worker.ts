@@ -29,6 +29,9 @@ const makeTensor: TensorMaker = (type, data, dims) =>
 
 let sessions: { base: SessionLike; token: SessionLike } | null = null
 const cancelled = new Set<string>()
+// ORT sessions can't run() concurrently — a second batch while one is in
+// flight throws mid-inference. Chain them so extra generate clicks queue.
+let batchChain: Promise<void> = Promise.resolve()
 
 async function readOpfs(name: string): Promise<ArrayBuffer> {
   const root = await navigator.storage.getDirectory()
@@ -129,6 +132,10 @@ async function runBatch(requestId: string, jobs: NeuralJob[]): Promise<void> {
 self.addEventListener('message', (e: MessageEvent<ToWorker>) => {
   const msg = e.data
   if (msg.type === 'init') void init(msg.files)
-  else if (msg.type === 'generate') void runBatch(msg.requestId, msg.jobs)
+  else if (msg.type === 'generate') {
+    // runBatch reports its own failures via post(); the catch only keeps a
+    // rejected link from wedging the chain for every later batch.
+    batchChain = batchChain.then(() => runBatch(msg.requestId, msg.jobs)).catch(() => undefined)
+  }
   else if (msg.type === 'cancel') cancelled.add(msg.requestId)
 })
