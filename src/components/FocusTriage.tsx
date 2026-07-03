@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Button, Kbd, Mark, Tooltip } from '@mantine/core'
 import {
   ArrowsClockwiseIcon,
@@ -16,7 +16,6 @@ import { audioBufferToWavBlob } from '../core/wav'
 import { downloadBlob } from '../core/downloads'
 import { renderMotif } from '../audio/renderOffline'
 import { effectiveTempo } from '../store/appState'
-import { recordTriageAction, triagePacePerMinute } from '../store/sessionPace'
 import { useAppDispatch, useAppState } from '../store/AppContext'
 import { useIsLoading, useIsPlaying } from './hooks/usePlayhead'
 import { usePlayOptions } from './hooks/usePlayOptions'
@@ -55,17 +54,7 @@ export function FocusTriage() {
   const isPlaying = useIsPlaying(face?.id ?? '')
   const isLoading = useIsLoading(face?.id ?? '')
 
-  // Telemetry ticks every few seconds so pace decays while idle.
-  const [, setTick] = useState(0)
-  useEffect(() => {
-    const t = window.setInterval(() => setTick((n) => n + 1), 4000)
-    return () => window.clearInterval(t)
-  }, [])
-  const pace = triagePacePerMinute()
   const unratedCount = active.filter((f) => f.face.rating === 0).length
-  const remainingMin = pace > 0 ? Math.ceil(unratedCount / pace) : null
-  const done = active.length - unratedCount
-  const progress = active.length > 0 ? Math.round((done / active.length) * 100) : 0
 
   const move = (delta: number) => {
     if (faces.length === 0) return
@@ -76,14 +65,12 @@ export function FocusTriage() {
   const rate = (r: RatingValue) => {
     if (!face) return
     dispatch({ type: 'MOTIF_RATED', id: face.id, rating: r })
-    recordTriageAction()
     move(1)
   }
 
   const discard = () => {
     if (!current) return
     dispatch({ type: 'MOTIF_DISCARDED', id: current.root.id })
-    recordTriageAction()
     // list shrinks under us — the same index now points at the next family
     if (index >= 0 && index < faces.length - 1) dispatch({ type: 'SELECT', id: faces[index + 1].id })
   }
@@ -198,7 +185,7 @@ export function FocusTriage() {
               leftSection={<XIcon size={11} weight="bold" />}
             >
               <span>
-                Discard (<Mark className="hk">x</Mark>)
+                Discard
               </span>
             </Button>
             <Button
@@ -214,19 +201,6 @@ export function FocusTriage() {
           <div className="focus-btn-row">
             <Button onClick={exportMidi}>.MID</Button>
             <Button onClick={() => void exportWav()}>.WAV</Button>
-          </div>
-          <div className="focus-telemetry">
-            <div className="row">
-              <span>Session pace</span>
-              <b>{pace > 0 ? `${Math.round(pace * 10) / 10} / min` : '—'}</b>
-            </div>
-            <div className="row">
-              <span>Remaining</span>
-              <b>{remainingMin !== null ? `~${remainingMin} min` : `${unratedCount} left`}</b>
-            </div>
-            <span className="progress-bar">
-              <div style={{ width: `${progress}%` }} />
-            </span>
           </div>
         </div>
       </div>
@@ -253,7 +227,7 @@ export function FocusTriage() {
                 <div className="q-label">
                   {isCurrent ? (
                     <>
-                      <CircleIcon size={6} weight="fill" /> NOW
+                      <CircleIcon size={6} weight="fill" /> {f.face.name}
                     </>
                   ) : isDone ? (
                     <>

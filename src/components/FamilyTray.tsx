@@ -204,9 +204,9 @@ export function FamilyTray({ family, onFold }: { family: Family; onFold: () => v
             <PlusIcon size={14} weight="bold" />
           </span>
           <span className="lbl">
-            New
+            Open
             <br />
-            variation
+            Mutation Bay
           </span>
         </button>
       </div>

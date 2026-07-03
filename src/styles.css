@@ -516,9 +516,14 @@ mark.hk,
   overflow: hidden;
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5);
 }
+/* Absolute so the svg's aspect-ratio intrinsic height can never inflate
+   layout — the .lcd box is sized by its inline height (and flex) alone. */
 .lcd svg {
   display: block;
+  position: absolute;
+  inset: 0;
   width: 100%;
+  height: 100%;
 }
 
 .roll-barline {
@@ -810,7 +815,7 @@ main {
 .gen-knobs {
   display: flex;
   gap: 20px;
-  align-items: center;
+  align-items: flex-start;
 }
 /* key + mode side by side, tempo stacked underneath */
 .gen-knob-stack {
@@ -1481,7 +1486,8 @@ main {
 .focus-lcd .lcd.deep {
   background: var(--lcd-deep);
   box-shadow: none;
-  flex: 1;
+  /* basis auto: the inline height is the floor, grow fills the bezel */
+  flex: 1 1 auto;
 }
 .focus-lcd-foot {
   display: flex;
@@ -1547,29 +1553,6 @@ main {
 .focus-btn-row .wb-btn {
   flex: 1;
 }
-.focus-telemetry {
-  border-top: 1px solid var(--module-border);
-  padding-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  color: var(--label);
-  text-transform: uppercase;
-}
-.focus-telemetry .row {
-  display: flex;
-  justify-content: space-between;
-}
-.focus-telemetry b {
-  color: var(--ink);
-}
-.focus-telemetry .progress-bar {
-  width: 100%;
-  height: 6px;
-}
-
 /* queue strip */
 .queue-strip {
   display: flex;
@@ -1642,6 +1625,93 @@ main {
 .wb-drawer-body {
   padding: 14px 16px;
   height: 100%;
+}
+
+/* ---------- about modal (Mantine Modal, classes stamped by the theme) ---------- */
+
+.wb-modal {
+  background: var(--panel-bg);
+  color: var(--ink);
+  border: 1px solid var(--module-border);
+  border-radius: 12px;
+}
+.wb-modal-header {
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--module-border);
+  padding: 14px 18px 10px;
+}
+.wb-modal-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.wb-modal-body {
+  padding: 14px 18px 18px;
+}
+.wb-modal-close {
+  color: var(--label);
+}
+.wb-modal-close:hover {
+  background: var(--well-bg);
+  color: var(--ink);
+}
+
+.about {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 1200px) {
+  .about {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 700px) {
+  .about {
+    grid-template-columns: 1fr;
+  }
+}
+.about-module {
+  padding: 12px 14px;
+}
+.about-label {
+  margin: 0 0 7px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--label);
+}
+.about p {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-dim);
+}
+.about p:last-child {
+  margin-bottom: 0;
+}
+.about-term {
+  color: var(--ink);
+  font-weight: 600;
+}
+.about-tech {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.about-tech dt {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink);
+}
+.about-tech dd {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-dim);
 }
 
 .bay {

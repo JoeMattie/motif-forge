@@ -37,6 +37,9 @@ export function Knob({ label, value, position, onPosition, detents, variant = 'd
 
   return (
     <div className="knob-wrap">
+      <div className="knob-label">
+        {label} <b>{value}</b>
+      </div>
       <AngleSlider
         className={`knob-slider ${variant}`}
         aria-label={label}
@@ -48,9 +51,6 @@ export function Knob({ label, value, position, onPosition, detents, variant = 'd
         restrictToMarks
         withLabel={false}
       />
-      <div className="knob-label">
-        {label} <b>{value}</b>
-      </div>
     </div>
   )
 }

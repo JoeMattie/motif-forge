@@ -70,7 +70,6 @@ export function LcdRoll({
         aria-label={`Piano roll: ${motif.name}`}
         viewBox={`0 0 ${totalBeats} ${span}`}
         preserveAspectRatio="none"
-        style={{ height: '100%' }}
       >
         {/* beat lines under bar lines */}
         {Array.from({ length: totalBeats - 1 }, (_, i) =>

@@ -59,6 +59,21 @@ export const theme = createTheme({
       defaultProps: { withCloseButton: false },
       classNames: { content: 'wb-drawer', body: 'wb-drawer-body' },
     },
+    Modal: {
+      defaultProps: {
+        centered: true,
+        size: 1360,
+        transitionProps: { duration: 120 },
+        overlayProps: { blur: 2 },
+      },
+      classNames: {
+        content: 'wb-modal',
+        header: 'wb-modal-header',
+        title: 'wb-modal-title',
+        body: 'wb-modal-body',
+        close: 'wb-modal-close',
+      },
+    },
     TextInput: { defaultProps: { size: 'sm' } },
     Textarea: { defaultProps: { size: 'sm' } },
     NumberInput: { defaultProps: { size: 'sm' } },

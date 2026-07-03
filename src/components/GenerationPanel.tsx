@@ -403,6 +403,7 @@ export function GenerationPanel() {
             </div>
             <Tooltip label="BPM stored on each candidate; the transport strip can override during audition">
               <div className="gen-ctl">
+                <span className="knob-label">tempo</span>
                 <div className="gen-tempo-row">
                   <Slider
                     w={130}
@@ -429,25 +430,25 @@ export function GenerationPanel() {
                     }}
                   />
                 </div>
-                <span className="knob-label">tempo</span>
               </div>
             </Tooltip>
           </div>
           <Tooltip label="Phrase length in bars of 4/4 — candidates must fill it exactly">
             <div className="gen-ctl">
+              <span className="knob-label">bars</span>
               <SegmentedControl
                 orientation="vertical"
                 value={String(bars)}
                 onChange={(v) => setBars(Number(v))}
                 data={BARS.map(String)}
               />
-              <span className="knob-label">bars</span>
             </div>
           </Tooltip>
         </div>
         <div className="gen-divider" />
         <div className="gen-engine">
           <div className="gen-ctl">
+            <span className="knob-label">engine</span>
             <SegmentedControl
               value={engine}
               onChange={(v) => setEngine(v as Engine)}
@@ -478,7 +479,6 @@ export function GenerationPanel() {
                 },
               ]}
             />
-            <span className="knob-label">engine</span>
           </div>
           {engine === 'neural' && <NeuralStrip />}
         </div>

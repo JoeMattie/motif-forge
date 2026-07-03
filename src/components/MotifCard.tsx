@@ -4,7 +4,6 @@ import { CaretDownIcon, CaretRightIcon } from '@phosphor-icons/react'
 import type { Part, Rating as RatingValue } from '../types'
 import type { Family } from '../core/families'
 import { engine } from '../audio/engine'
-import { recordTriageAction } from '../store/sessionPace'
 import { useAppDispatch } from '../store/AppContext'
 import { useIsLoading, useIsPlaying } from './hooks/usePlayhead'
 import { usePlayOptions } from './hooks/usePlayOptions'
@@ -134,10 +133,7 @@ export function MotifCard({ family, selected, expanded, onToggleExpand, conceptR
           </Tooltip>
           <RateSquares
             rating={face.rating}
-            onRate={(r) => {
-              dispatch({ type: 'MOTIF_RATED', id: face.id, rating: r as RatingValue })
-              recordTriageAction()
-            }}
+            onRate={(r) => dispatch({ type: 'MOTIF_RATED', id: face.id, rating: r as RatingValue })}
           />
           <span className="spacer" />
           {onToggleExpand && (

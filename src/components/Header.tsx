@@ -1,9 +1,11 @@
-import { Button, SegmentedControl, Tooltip } from '@mantine/core'
-import { MonitorIcon, MoonIcon, SunIcon } from '@phosphor-icons/react'
+import { ActionIcon, Button, SegmentedControl, Tooltip } from '@mantine/core'
+import { InfoIcon, MonitorIcon, MoonIcon, SunIcon } from '@phosphor-icons/react'
+import { useState } from 'react'
 import { engine } from '../audio/engine'
 import { useAppDispatch, useAppState } from '../store/AppContext'
 import type { TriageMode, View } from '../store/appState'
 import { useThemePref, useTooltipsEnabled, type ThemePref } from '../uiPrefs'
+import { AboutModal } from './AboutModal'
 import { HardToggle } from './hw/HardToggle'
 
 const VIEWS: { value: View; label: string }[] = [
@@ -29,6 +31,7 @@ export function Header() {
   const dispatch = useAppDispatch()
   const [themePref, setThemePref] = useThemePref()
   const [tooltipsEnabled, setTooltipsEnabled] = useTooltipsEnabled()
+  const [aboutOpen, setAboutOpen] = useState(false)
   const bayOpen = state.mutationTargetId !== null
 
   const subLabel = bayOpen ? 'MUTATION BAY · MF–01 · POLY' : SUB_LABELS[state.view]
@@ -36,6 +39,12 @@ export function Header() {
   return (
     <header className="wb-header">
       <span className="brand">MOTIF–FORGE</span>
+      <Tooltip label="About Motif Forge — what it does, how it works, what it's built from">
+        <ActionIcon aria-label="About Motif Forge" onClick={() => setAboutOpen(true)}>
+          <InfoIcon size={14} />
+        </ActionIcon>
+      </Tooltip>
+      <AboutModal opened={aboutOpen} onClose={() => setAboutOpen(false)} />
       <span className="brand-sub">{subLabel}</span>
       <span className="spacer" />
 

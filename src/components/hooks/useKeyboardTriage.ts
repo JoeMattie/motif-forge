@@ -3,7 +3,6 @@ import type { Motif, Rating } from '../../types'
 import { engine } from '../../audio/engine'
 import { verticalTarget } from '../../core/gridNav'
 import { effectiveTempo } from '../../store/appState'
-import { recordTriageAction } from '../../store/sessionPace'
 import { useAppDispatch, useAppState } from '../../store/AppContext'
 
 /**
@@ -54,6 +53,9 @@ export function useKeyboardTriage(
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
+      // Modals (e.g. ABOUT) trap focus, so their keys land inside the dialog —
+      // don't triage behind them. (The bay's Drawer instead disables `enabled`.)
+      if (e.target instanceof HTMLElement && e.target.closest('[role="dialog"]')) return
       if (visibleMotifs.length === 0) return
 
       const playCurrent = (m: Motif) =>
@@ -105,12 +107,10 @@ export function useKeyboardTriage(
           case '4':
           case '5':
             dispatch({ type: 'MOTIF_RATED', id: trayCurrent.id, rating: Number(e.key) as Rating })
-            recordTriageAction()
             moveTray(1)
             break
           case 'x':
             dispatch({ type: 'MOTIF_DISCARDED', id: trayCurrent.id })
-            recordTriageAction()
             break
           case 'u':
             if (state.lastDiscardedId) dispatch({ type: 'MOTIF_RESTORED', id: state.lastDiscardedId })
@@ -192,14 +192,12 @@ export function useKeyboardTriage(
         case '5':
           if (current) {
             dispatch({ type: 'MOTIF_RATED', id: current.id, rating: Number(e.key) as Rating })
-            recordTriageAction()
             advance()
           }
           break
         case 'x':
           if (current) {
             dispatch({ type: 'MOTIF_DISCARDED', id: current.id })
-            recordTriageAction()
             advance()
           }
           break
