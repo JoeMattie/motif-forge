@@ -1,54 +1,38 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { NumberInput, Select, Textarea, Tooltip } from '@mantine/core'
-import {
-  ArrowElbowDownRightIcon,
-  AsteriskIcon,
-  CaretRightIcon,
-  CircleIcon,
-  DiceFiveIcon,
-  LockSimpleIcon,
-  XIcon,
-} from '@phosphor-icons/react'
-import type { Mode, Motif, Rating as RatingValue } from '../types'
+import { Badge, Button, Divider, Group, Kbd, Mark, Stack, Tooltip } from '@mantine/core'
+import { XIcon } from '@phosphor-icons/react'
+import type { Motif, PartVariation } from '../types'
 import { parentIdOf } from '../types'
-import { MODES, beatsPerBar } from '../core/theory'
-import { applyTransform, type Transform } from '../core/transforms'
-import { familyOf, variantBadge } from '../core/families'
+import { beatsPerBar } from '../core/theory'
+import { applyTransform, describeTransform, type Transform } from '../core/transforms'
+import {
+  buildPartTrees,
+  compositeMotif,
+  compositeNotes,
+  contextMotifForNode,
+  partCountOf,
+  partNotes,
+  pruneIds,
+  rebaseHiddenIds,
+  selectionFor,
+  variationsFromChildren,
+  variedPartIndices,
+  type PartTreeNode,
+} from '../core/workbench'
 import { mutateBatch } from '../api/generate'
 import { enqueue } from '../api/queue'
-import { SURPRISE_MUTATION_BRIEF } from '../api/prompts'
+import { partMutationBrief } from '../api/prompts'
 import { engine } from '../audio/engine'
 import { effectiveTempo } from '../store/appState'
 import { useAppDispatch, useAppState } from '../store/AppContext'
-import { motifToMidi, midiFilename } from '../core/midi'
-import { audioBufferToWavBlob } from '../core/wav'
-import { downloadBlob } from '../core/downloads'
-import { renderMotif } from '../audio/renderOffline'
+import { newId } from '../core/ids'
 import { useIsLoading, useIsPlaying } from './hooks/usePlayhead'
 import { isTypingTarget } from './hooks/useKeyboardTriage'
 import { usePlayOptions } from './hooks/usePlayOptions'
 import { LcdRoll } from './LcdRoll'
-import { PatchCables, type CableSpec } from './PatchCables'
-import { HardToggle } from './hw/HardToggle'
 import { PlayRound } from './hw/PlayRound'
-import { RateSquares } from './hw/RateSquares'
-
-type PartState = 'lock' | 'vary'
-
-const ACCENT = '#f14d0e'
-const YELLOW = '#e8b23c'
-const GREEN = '#3ba07e'
-
-const PART_COLOR_CLASSES = ['part-0', 'part-1', 'part-2', 'part-3']
-
-function cableColorFor(motif: Motif): string {
-  if (motif.source.kind === 'transform') return GREEN
-  if (motif.source.kind === 'llm-mutation' && motif.source.variedParts?.length) {
-    const allDrums = motif.source.variedParts.every((i) => motif.parts[i]?.instrument === 'drums')
-    return allDrums ? YELLOW : ACCENT
-  }
-  return ACCENT
-}
+import { AdvancedPanel } from './bay/AdvancedPanel'
+import { PartRow, provenanceLabel, type BayFocus } from './bay/PartRow'
 
 function lineageChain(motif: Motif, motifs: Map<string, Motif>): Motif[] {
   const chain: Motif[] = [motif]
@@ -74,804 +58,535 @@ function lineageLabel(m: Motif): string {
       return m.source.transform.toUpperCase().slice(0, 18)
     case 'llm-mutation':
       return 'LLM VAR'
+    case 'bay-mix':
+      return 'MIX'
   }
 }
 
-function ChildCard({
-  child,
-  isAbTarget,
-  onSelectAb,
-  cardRef,
-  mixForPlayback,
-}: {
-  child: Motif
-  isAbTarget: boolean
-  onSelectAb: () => void
-  cardRef: (el: HTMLDivElement | null) => void
-  /** Applies the live stem swap (locked parts play the source's stems). */
-  mixForPlayback: (m: Motif) => Motif
-}) {
-  const state = useAppState()
-  const dispatch = useAppDispatch()
-  const playOpts = usePlayOptions()
-  const isPlaying = useIsPlaying(child.id)
-  const isLoading = useIsLoading(child.id)
-  const badge = variantBadge(child)
-  const color = cableColorFor(child)
-  const family = familyOf(child, state.motifs)
-  const kept = family.face.id === child.id
-
-  const varied = child.source.kind === 'llm-mutation' ? (child.source.variedParts ?? []) : []
-  const dimParts =
-    varied.length > 0
-      ? new Set(child.parts.map((_, i) => i).filter((i) => !varied.includes(i)))
-      : undefined
-
-  const soloVar = () => {
-    if (varied.length === 0) return
-    const solo: Motif = {
-      ...child,
-      id: `${child.id}::solo`,
-      notes: child.notes.filter((n) => varied.includes(n.part ?? 0)),
-    }
-    engine.toggle(solo, playOpts(child))
-  }
-
-  const tempo = effectiveTempo(state.transport, child)
-  const exportMidi = () =>
-    downloadBlob(
-      new Blob([motifToMidi(child, tempo).buffer as ArrayBuffer], { type: 'audio/midi' }),
-      midiFilename(child, tempo),
-    )
-  const exportWav = async () => {
-    const buf = await renderMotif(child, tempo, {
-      drone: state.transport.drone,
-      sound: state.transport.sound,
-      forceSound: state.transport.forceSound,
-    })
-    downloadBlob(audioBufferToWavBlob(buf), midiFilename(child, tempo).replace(/\.mid$/, '.wav'))
-  }
-
-  const badgeCls = badge.kind === 'transform' ? 'transform' : color === YELLOW ? 'var-drums' : 'var'
-  const cableCls = color === YELLOW ? ' cable-yellow' : color === GREEN ? ' cable-green' : ''
-
-  return (
-    <div
-      ref={cardRef}
-      className={`child-card${cableCls}${isPlaying || isAbTarget ? ' playing' : ''}`}
-      onClick={onSelectAb}
-    >
-      <div className="card-head">
-        <Tooltip label={child.rationale} disabled={child.rationale ? undefined : true}>
-          <span className="child-name">
-            <ArrowElbowDownRightIcon size={11} /> {child.name}
-          </span>
-        </Tooltip>
-        <span className={`child-badge ${badgeCls}`}>{badge.label}</span>
-      </div>
-      <LcdRoll motif={child} height={80} dimParts={dimParts} />
-      {child.parts.length > 0 && varied.length > 0 && (
-        <div className="part-badges">
-          {child.parts.map((p, i) =>
-            varied.includes(i) ? (
-              <span
-                key={i}
-                className={`part-badge varied${p.instrument === 'drums' ? ' drums' : ''}`}
-              >
-                {p.name} <AsteriskIcon size={7} weight="bold" />
-              </span>
-            ) : (
-              <span key={i} className="part-badge">
-                {p.name} <LockSimpleIcon size={7} weight="fill" />
-              </span>
-            ),
-          )}
-        </div>
-      )}
-      <div className="child-foot">
-        <Tooltip label="Play/stop — locked channels play the source's stems, armed channels play this variation">
-          <PlayRound
-            playing={isPlaying}
-            loading={isLoading}
-            onClick={() => engine.toggle(mixForPlayback(child), playOpts(child))}
-          />
-        </Tooltip>
-        <RateSquares
-          rating={child.rating}
-          onRate={(r) => dispatch({ type: 'MOTIF_RATED', id: child.id, rating: r as RatingValue })}
-        />
-        <span className="spacer" />
-        <Tooltip label="Promote this child as the family's face — what triage shows, plays, and exports">
-          <button
-            className="promote-chip"
-            data-promoted={kept}
-            onClick={(e) => {
-              e.stopPropagation()
-              dispatch({
-                type: 'MOTIF_PROMOTED',
-                id: child.id,
-                familyIds: family.members.map((m) => m.id),
-              })
-            }}
-          >
-            {kept ? (
-              <>
-                Keep <CircleIcon size={6} weight="fill" />
-              </>
-            ) : (
-              'Keep'
-            )}
-          </button>
-        </Tooltip>
-        {varied.length > 0 && (
-          <Tooltip label="Audition only the varied part(s), muting everything the LLM left untouched">
-            <button
-              className="text-btn"
-              onClick={(e) => {
-                e.stopPropagation()
-                soloVar()
-              }}
-            >
-              Solo var
-            </button>
-          </Tooltip>
-        )}
-        <button
-          className="text-btn"
-          onClick={(e) => {
-            e.stopPropagation()
-            exportMidi()
-          }}
-        >
-          .MID
-        </button>
-        <button
-          className="text-btn"
-          onClick={(e) => {
-            e.stopPropagation()
-            void exportWav()
-          }}
-        >
-          .WAV
-        </button>
-        <button
-          className="text-btn"
-          title="Discard this variant"
-          onClick={(e) => {
-            e.stopPropagation()
-            dispatch({ type: 'MOTIF_DISCARDED', id: child.id })
-          }}
-        >
-          <XIcon size={10} weight="bold" />
-        </button>
-      </div>
-    </div>
-  )
+interface PendingBatch {
+  key: string
+  part: number
+  parentNodeId: string | null
 }
 
 /**
- * Mutation Bay — opens scoped to ONE family. Left: source module with
- * per-part LOCK/VARY channel strips + transform/LLM module. Middle: variant
- * children patched in by color-coded cables. Right: A/B audition, cable
- * legend, part-activity meters.
+ * Mutation Bay — a per-part variation workspace scoped to ONE source motif.
+ * One row per part; MUTATE grows a tree of LLM takes to the right, ADVANCED
+ * adds transforms + a custom brief. Enter picks one take per part, Space
+ * loops the composite mix, and PROMOTE lands the mix in the family.
  */
 export function MutationBay({ source }: { source: Motif }) {
   const state = useAppState()
   const dispatch = useAppDispatch()
   const playOpts = usePlayOptions()
-  const isPlaying = useIsPlaying(source.id)
-  const isLoading = useIsLoading(source.id)
-
-  const family = useMemo(() => familyOf(source, state.motifs), [source, state.motifs])
-  const children = useMemo(
-    () =>
-      family.members
-        .filter((m) => m.id !== family.rootId && !m.discarded)
-        .sort((a, b) => b.createdAt - a.createdAt),
-    [family],
-  )
 
   const hasParts = source.parts.length > 0
-  const [partState, setPartState] = useState<PartState[]>(() => source.parts.map(() => 'lock'))
-  const armed = hasParts
-    ? partState.flatMap((s, i) => (s === 'vary' ? [i] : []))
-    : source.parts.map((_, i) => i)
-  const locked = hasParts ? partState.flatMap((s, i) => (s === 'lock' ? [i] : [])) : []
+  const partCount = partCountOf(source)
+  const mixId = `${source.id}::mix`
+  const mixPlaying = useIsPlaying(mixId)
+  const mixLoading = useIsLoading(mixId)
 
-  const [brief, setBrief] = useState('')
-  const [lockRhythm, setLockRhythm] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const trees = useMemo(
+    () => buildPartTrees(source, state.partVariations),
+    [source, state.partVariations],
+  )
+  const selection = useMemo(
+    () => selectionFor(state.partVariations, source.id),
+    [state.partVariations, source.id],
+  )
+  const mix = useMemo(() => compositeMotif(source, selection, mixId), [source, selection, mixId])
+
+  const [focus, setFocus] = useState<BayFocus>({ part: 0, nodeId: null })
+  const [advanced, setAdvanced] = useState<BayFocus | null>(null)
+  const [showHidden, setShowHidden] = useState(false)
+  const [collapsedParts, setCollapsedParts] = useState<Set<number>>(new Set())
+  const [pending, setPending] = useState<PendingBatch[]>([])
   const [message, setMessage] = useState<string | null>(null)
-  const [transposeBy, setTransposeBy] = useState(2)
-  const [targetMode, setTargetMode] = useState<Mode>(source.mode === 'dorian' ? 'phrygian' : 'dorian')
-  const [selectedNotes, setSelectedNotes] = useState<Set<number>>(new Set())
-  const [abSide, setAbSide] = useState<'A' | 'B'>('A')
-  const [abLoop, setAbLoop] = useState(true)
-  const [abChildId, setAbChildId] = useState<string | null>(null)
+  const [pruneArmed, setPruneArmed] = useState(false)
+  const swapTimer = useRef<number | null>(null)
+  const pruneTimer = useRef<number | null>(null)
 
-  const abChild = (abChildId ? state.motifs.get(abChildId) : undefined) ?? children[0]
+  useEffect(
+    () => () => {
+      if (swapTimer.current !== null) clearTimeout(swapTimer.current)
+      if (pruneTimer.current !== null) clearTimeout(pruneTimer.current)
+    },
+    [],
+  )
 
-  /**
-   * Live stem swap: auditioning a variation honors the CURRENT channel
-   * toggles — locked parts play the SOURCE's stems, armed parts play the
-   * variation's. Only kicks in once something is armed (default all-LOCK
-   * plays the variation as-is), and only when the stems line up.
-   */
-  const mixForPlayback = (child: Motif): Motif => {
-    if (
-      !hasParts ||
-      armed.length === 0 ||
-      locked.length === 0 ||
-      child.parts.length !== source.parts.length ||
-      child.bars !== source.bars
-    ) {
-      return child
+  // Focus may point at a node that was pruned or hidden since — fall back to
+  // the row's origin cell instead of a dangling cursor.
+  const focusedVariation = focus.nodeId ? state.partVariations.get(focus.nodeId) : undefined
+  const effFocus: BayFocus =
+    focus.part >= partCount
+      ? { part: 0, nodeId: null }
+      : focus.nodeId && (!focusedVariation || (focusedVariation.hidden && !showHidden))
+        ? { part: focus.part, nodeId: null }
+        : focus
+
+  const focusNode = (part: number, nodeId: string | null) => {
+    setFocus({ part, nodeId })
+    // The advanced panel follows the focused take within its own row.
+    setAdvanced((a) => (a && a.part === part ? { part, nodeId } : a))
+  }
+
+  const toggleCollapse = (part: number) => {
+    setCollapsedParts((prev) => {
+      const next = new Set(prev)
+      if (next.has(part)) next.delete(part)
+      else next.add(part)
+      return next
+    })
+  }
+
+  const partName = (i: number) => (hasParts ? (source.parts[i]?.name ?? `part ${i}`) : 'all')
+  const partIsDrums = (i: number) => hasParts && source.parts[i]?.instrument === 'drums'
+
+  // ---- playback ----
+
+  const toggleMix = () => {
+    if (engine.getSnapshot().playingMotifId !== null) engine.stop()
+    else engine.play(mix, playOpts(mix, { loop: true }))
+  }
+
+  /** Select a take into the mix (null = original). While the mix loops, the
+   * swap lands on the next bar boundary instead of restarting the phrase. */
+  const applySelection = (part: number, node: PartVariation | null) => {
+    const cur = selection.get(part) ?? null
+    const updates: PartVariation[] = []
+    if (node === null) {
+      if (!cur) return
+      updates.push({ ...cur, selected: false })
+    } else {
+      if (cur?.id === node.id) return
+      if (cur) updates.push({ ...cur, selected: false })
+      updates.push({ ...node, selected: true, hidden: false })
     }
-    const stem = (m: Motif, s: PartState) =>
-      m.notes.filter((n) => partState[Math.min(n.part ?? 0, partState.length - 1)] === s)
-    return {
-      ...child,
-      notes: [...stem(source, 'lock'), ...stem(child, 'vary')].sort(
-        (a, b) => a.startBeat - b.startBeat || a.pitch - b.pitch,
-      ),
+    dispatch({ type: 'PART_VARIATIONS_UPSERT', variations: updates })
+
+    const nextSel = new Map(selection)
+    if (node === null) nextSel.delete(part)
+    else nextSel.set(part, node)
+    const nextMix = compositeMotif(source, nextSel, mixId)
+
+    const pos = engine.getPositionBeats()
+    if (engine.getSnapshot().playingMotifId === mixId && pos !== null) {
+      const bpb = beatsPerBar(source.timeSig)
+      const total = source.bars * bpb
+      const nextBar = Math.ceil((pos + 0.05) / bpb) * bpb
+      const waitMs = ((nextBar - pos) * 60 * 1000) / effectiveTempo(state.transport, source)
+      if (swapTimer.current !== null) clearTimeout(swapTimer.current)
+      swapTimer.current = window.setTimeout(() => {
+        if (engine.getSnapshot().playingMotifId !== mixId) return
+        engine.play(nextMix, playOpts(nextMix, { loop: true, fromBeat: nextBar % total }))
+      }, Math.max(0, waitMs - 90))
     }
   }
 
-  // Space plays/stops (source, or whatever bay motif is sounding); ESC closes
-  // the bay. Guarded so typing in the brief textarea keeps its keys.
+  // ---- generation ----
+
+  const runMutation = (part: number, node: PartVariation | null, brief: string, lockRhythm = false) => {
+    const key = newId()
+    const parentNodeId = node?.id ?? null
+    setPending((p) => [...p, { key, part, parentNodeId }])
+    setMessage(null)
+    const ctx = contextMotifForNode(source, selection, part, node)
+    const lockedParts = hasParts
+      ? source.parts.map((_, i) => i).filter((i) => i !== part)
+      : undefined
+    void enqueue(() => mutateBatch(ctx, brief, 5, { lockedParts, lockRhythm }))
+      .then((result) => {
+        const vs = variationsFromChildren(
+          result.valid,
+          source,
+          part,
+          parentNodeId,
+          { kind: 'llm', brief },
+          newId,
+          Date.now(),
+        )
+        if (vs.length > 0) dispatch({ type: 'PART_VARIATIONS_UPSERT', variations: vs })
+        const dropped = result.droppedCount + (result.valid.length - vs.length)
+        setMessage(
+          `+${vs.length} takes on ${partName(part)}${dropped > 0 ? ` · ${dropped} dropped` : ''}`,
+        )
+      })
+      .catch((e) => setMessage(`Mutation failed: ${String(e).slice(0, 120)}`))
+      .finally(() => setPending((p) => p.filter((x) => x.key !== key)))
+  }
+
+  const mutateDefault = (part: number, node: PartVariation | null) =>
+    runMutation(part, node, partMutationBrief(partName(part), partIsDrums(part)))
+
+  const applyPartTransform = (part: number, node: PartVariation | null, t: Transform) => {
+    const take = node ? node.notes : partNotes(source, part)
+    const child = applyTransform({ ...source, id: `take:${source.id}:${part}`, notes: take }, t)
+    dispatch({
+      type: 'PART_VARIATIONS_UPSERT',
+      variations: [
+        {
+          id: newId(),
+          sourceMotifId: source.id,
+          partIndex: part,
+          parentNodeId: node?.id ?? null,
+          notes: child.notes,
+          provenance: { kind: 'transform', transform: describeTransform(t) },
+          selected: false,
+          hidden: false,
+          createdAt: Date.now(),
+        },
+      ],
+    })
+  }
+
+  // ---- tree housekeeping ----
+
+  const rebase = () => {
+    const ids = rebaseHiddenIds(state.partVariations, source.id)
+    if (ids.length === 0) {
+      setMessage('Nothing to rebase — every take is on a selected path')
+      return
+    }
+    const variations = ids
+      .map((id) => state.partVariations.get(id))
+      .filter((v): v is PartVariation => v !== undefined)
+      .map((v) => ({ ...v, hidden: true }))
+    dispatch({ type: 'PART_VARIATIONS_UPSERT', variations })
+    setMessage(`${ids.length} takes hidden — SHOW HIDDEN to bring them back, PRUNE to drop them`)
+  }
+
+  const unhideAll = () => {
+    const variations = [...state.partVariations.values()]
+      .filter((v) => v.sourceMotifId === source.id && v.hidden)
+      .map((v) => ({ ...v, hidden: false }))
+    if (variations.length > 0) dispatch({ type: 'PART_VARIATIONS_UPSERT', variations })
+  }
+
+  const prune = () => {
+    if (!pruneArmed) {
+      setPruneArmed(true)
+      if (pruneTimer.current !== null) clearTimeout(pruneTimer.current)
+      pruneTimer.current = window.setTimeout(() => setPruneArmed(false), 3000)
+      return
+    }
+    setPruneArmed(false)
+    if (pruneTimer.current !== null) clearTimeout(pruneTimer.current)
+    const ids = pruneIds(state.partVariations, source.id)
+    if (ids.length === 0) {
+      setMessage('Nothing to prune')
+      return
+    }
+    dispatch({ type: 'PART_VARIATIONS_DELETED', ids })
+    if (focus.nodeId && ids.includes(focus.nodeId)) setFocus({ part: focus.part, nodeId: null })
+    setMessage(`${ids.length} takes pruned`)
+  }
+
+  const promote = () => {
+    if (selection.size === 0) return
+    const promoted: Motif = {
+      ...source,
+      id: newId(),
+      name: `${source.name} mix`,
+      notes: compositeNotes(source, selection),
+      rating: 0,
+      discarded: false,
+      promoted: false,
+      trackId: null,
+      rationale: undefined,
+      createdAt: Date.now(),
+      source: { kind: 'bay-mix', parentId: source.id, variedParts: variedPartIndices(selection) },
+    }
+    dispatch({ type: 'MOTIFS_ADDED', motifs: [promoted] })
+    setMessage(`Promoted "${promoted.name}" into the family`)
+  }
+
+  // ---- keyboard ----
+
+  const closeBay = () => {
+    engine.stop()
+    dispatch({ type: 'SET_MUTATION_TARGET', id: null })
+  }
+
   useEffect(() => {
+    type FindResult = { parent: string | null; siblings: PartTreeNode[]; node: PartTreeNode }
+    const findPath = (
+      nodes: PartTreeNode[],
+      id: string,
+      parent: string | null,
+    ): FindResult | null => {
+      for (const n of nodes) {
+        if (n.variation.id === id) return { parent, siblings: nodes, node: n }
+        const r = findPath(n.children, id, n.variation.id)
+        if (r) return r
+      }
+      return null
+    }
+    const vis = (ns: PartTreeNode[]) => ns.filter((n) => showHidden || !n.variation.hidden)
+
+    const moveFocus = (dir: 'up' | 'down' | 'left' | 'right') => {
+      const { part, nodeId } = effFocus
+      // Arrows match the layout: mutations sit side by side, children hang
+      // below their parent. Down descends into the children row, Up climbs
+      // back to the parent (origin at the root generation).
+      if (dir === 'down') {
+        const targets =
+          nodeId === null
+            ? vis(trees[part] ?? [])
+            : vis(findPath(trees[part] ?? [], nodeId, null)?.node.children ?? [])
+        if (targets[0]) focusNode(part, targets[0].variation.id)
+        return
+      }
+      if (dir === 'up') {
+        if (nodeId !== null) {
+          focusNode(part, findPath(trees[part] ?? [], nodeId, null)?.parent ?? null)
+        }
+        return
+      }
+      // Right/Left walk EVERY visible take of a row in visual (depth-first)
+      // order — only past the last one does the cursor cross to the next
+      // instrument. Collapsed rows keep their takes navigable (mini boxes).
+      const delta = dir === 'right' ? 1 : -1
+      const dfs = (ns: PartTreeNode[]): string[] =>
+        vis(ns).flatMap((n) => [n.variation.id, ...dfs(n.children)])
+      const seq: BayFocus[] = []
+      for (let p = 0; p < partCount; p++) {
+        seq.push({ part: p, nodeId: null })
+        for (const id of dfs(trees[p] ?? [])) seq.push({ part: p, nodeId: id })
+      }
+      const idx = seq.findIndex((f) => f.part === part && f.nodeId === nodeId)
+      const ni = idx + delta
+      if (idx >= 0 && ni >= 0 && ni < seq.length) focusNode(seq[ni].part, seq[ni].nodeId)
+    }
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       if (e.key === 'Escape') {
-        // first ESC leaves the text field, the next one closes the bay
+        // ESC walks out: text field → advanced panel → the bay itself
         if (isTypingTarget(e.target)) {
           ;(e.target as HTMLElement).blur()
           return
         }
-        engine.stop()
-        dispatch({ type: 'SET_MUTATION_TARGET', id: null })
+        if (advanced) {
+          setAdvanced(null)
+          return
+        }
+        closeBay()
         return
       }
       if (isTypingTarget(e.target)) return
-      if (e.key === ' ') {
-        e.preventDefault()
-        if (engine.getSnapshot().playingMotifId !== null) engine.stop()
-        else engine.play(source, playOpts(source))
-      } else if (e.key === 'p' && abChild) {
-        dispatch({
-          type: 'MOTIF_PROMOTED',
-          id: abChild.id,
-          familyIds: family.members.map((m) => m.id),
-        })
+      const focusedNode = effFocus.nodeId
+        ? (state.partVariations.get(effFocus.nodeId) ?? null)
+        : null
+      switch (e.key) {
+        case ' ':
+          e.preventDefault()
+          toggleMix()
+          break
+        case 'ArrowUp':
+        case 'ArrowDown':
+        case 'ArrowLeft':
+        case 'ArrowRight':
+          e.preventDefault()
+          moveFocus(e.key.slice(5).toLowerCase() as 'up' | 'down' | 'left' | 'right')
+          break
+        case 'Enter':
+          e.preventDefault()
+          applySelection(effFocus.part, focusedNode)
+          break
+        case 'm':
+          mutateDefault(effFocus.part, focusedNode)
+          break
+        case 'a':
+          setAdvanced((a) =>
+            a?.part === effFocus.part ? null : { part: effFocus.part, nodeId: effFocus.nodeId },
+          )
+          break
+        case 'c':
+          toggleCollapse(effFocus.part)
+          break
+        case 'p':
+          promote()
+          break
+        default:
+          break
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [source, dispatch, playOpts, abChild, family])
-
-  const bayRef = useRef<HTMLDivElement>(null)
-  const stripRefs = useRef<(HTMLDivElement | null)[]>([])
-  const sourceLcdRef = useRef<HTMLDivElement>(null)
-  const transformModuleRef = useRef<HTMLDivElement>(null)
-  const childRefs = useRef(new Map<string, HTMLDivElement>())
-
-  const setPart = (i: number, s: PartState) =>
-    setPartState((prev) => prev.map((p, j) => (j === i ? s : p)))
-
-  // Transforms apply client-side to the unlocked (armed) parts only. Pitch
-  // transforms skip drum parts — inverting a kick pattern is noise.
-  const transformScope = (pitchTransform: boolean): Set<number> | undefined => {
-    if (!hasParts) return undefined
-    const scope = armed.filter((i) => !pitchTransform || source.parts[i].instrument !== 'drums')
-    return new Set(scope)
-  }
-  const transformsDisabled = hasParts && armed.length === 0
-
-  const apply = (t: Transform, pitchTransform = true) => {
-    const child = applyTransform(source, t, { parts: transformScope(pitchTransform) })
-    dispatch({ type: 'MOTIFS_ADDED', motifs: [child] })
-    if (t.type === 'octaveDisplace') setSelectedNotes(new Set())
-  }
-
-  const toggleNote = (i: number) =>
-    setSelectedNotes((prev) => {
-      const next = new Set(prev)
-      if (next.has(i)) next.delete(i)
-      else next.add(i)
-      return next
-    })
-
-  const runLlmMutation = async (mutationBrief: string) => {
-    if (!mutationBrief.trim() || busy) return
-    if (hasParts && armed.length === 0) return
-    setBusy(true)
-    setMessage(null)
-    try {
-      const result = await enqueue(() =>
-        mutateBatch(source, mutationBrief.trim(), 5, {
-          lockRhythm,
-          lockedParts: hasParts ? locked : undefined,
-        }),
-      )
-      dispatch({ type: 'MOTIFS_ADDED', motifs: result.valid })
-      setMessage(
-        `${result.valid.length} children added${result.droppedCount ? `, ${result.droppedCount} dropped` : ''}`,
-      )
-    } catch (e) {
-      setMessage(`Mutation failed: ${String(e).slice(0, 120)}`)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  // A/B audition — latch a side; while looping the swap lands on the next bar.
-  // The B side plays through the live stem swap, so only armed parts differ.
-  const audition = (side: 'A' | 'B') => {
-    setAbSide(side)
-    const target = side === 'A' ? source : abChild && mixForPlayback(abChild)
-    if (!target) return
-    const pos = engine.getPositionBeats()
-    const playingId = engine.getSnapshot().playingMotifId
-    const nowPlaying = playingId === source.id || playingId === abChild?.id
-    if (abLoop && nowPlaying && pos !== null) {
-      const bpb = beatsPerBar(source.timeSig)
-      const nextBar = Math.ceil((pos + 0.05) / bpb) * bpb
-      const waitMs = ((nextBar - pos) * 60 * 1000) / effectiveTempo(state.transport, source)
-      const targetTotal = target.bars * beatsPerBar(target.timeSig)
-      window.setTimeout(() => {
-        engine.play(target, playOpts(target, { loop: true, fromBeat: nextBar % targetTotal }))
-      }, Math.max(0, waitMs - 90))
-    } else {
-      engine.play(target, playOpts(target, { loop: abLoop }))
-    }
-  }
-
-  // Patch cables: one per varied part per child, from that part's channel
-  // strip jack; transforms patch from the transform module in green.
-  // Endpoints are getters — refs aren't populated until after the first
-  // render, and cables must be visible from the first paint.
-  const cables: CableSpec[] = children.flatMap((child) => {
-    const to = {
-      getEl: () => childRefs.current.get(child.id) ?? null,
-      edge: 'left' as const,
-      vAlign: 0.25,
-    }
-    if (child.source.kind === 'transform') {
-      return [{ from: { getEl: () => transformModuleRef.current, edge: 'right' as const }, to, color: GREEN }]
-    }
-    const varied = child.source.kind === 'llm-mutation' ? (child.source.variedParts ?? []) : []
-    if (varied.length === 0) {
-      return [{ from: { getEl: () => sourceLcdRef.current, edge: 'right' as const }, to, color: ACCENT }]
-    }
-    return varied.map((p) => ({
-      from: { getEl: () => stripRefs.current[p] ?? null, edge: 'right' as const, vAlign: 0.5 },
-      to,
-      color: source.parts[p]?.instrument === 'drums' ? YELLOW : ACCENT,
-    }))
   })
 
+  // ---- render ----
+
   const chain = lineageChain(source, state.motifs)
-  const armedNames = armed.map((i) => ({
-    i,
-    name: source.parts[i]?.name ?? `part ${i}`,
-    drums: source.parts[i]?.instrument === 'drums',
-  }))
+  const rowParts = hasParts
+    ? source.parts.map((p, i) => ({
+        name: p.name,
+        instrument: p.instrument === 'drums' ? 'GM kit' : p.instrument,
+        isDrums: p.instrument === 'drums',
+        index: i,
+      }))
+    : [{ name: 'all', instrument: 'transport sound', isDrums: false, index: 0 }]
+
+  const advancedNode = advanced?.nodeId ? (state.partVariations.get(advanced.nodeId) ?? null) : null
 
   return (
-    <div className="bay" ref={bayRef}>
-      <PatchCables
-        container={bayRef}
-        cables={cables}
-        deps={[children.map((c) => c.id).join(','), partState.join(','), busy]}
-      />
-
-      {/* -------- left column: source + transform/LLM -------- */}
-      <div className="bay-left">
-        <section className="module bay-module">
-          <div className="bay-head-row">
-            <span className="micro-head">
-              Source{hasParts ? ` · ${source.parts.length} parts` : ''}
-            </span>
-            <span className="micro-dim">
-              {chain.map((m) => lineageLabel(m)).join(' → ') || 'THIS'}
-            </span>
-          </div>
-          <div className="bay-head-row">
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
-              <Tooltip label="Play/stop the source (Space)">
-                <PlayRound
-                  playing={isPlaying}
-                  loading={isLoading}
-                  onClick={() => engine.toggle(source, playOpts(source))}
-                />
-              </Tooltip>
-              <span className="bay-title">{source.name}</span>
-            </span>
-            <span className="bay-meta">
-              {source.key} {source.mode.slice(0, 3).toUpperCase()} · {source.bars}B · {source.tempo}
-            </span>
-          </div>
-          <div ref={sourceLcdRef}>
-            <LcdRoll
-              motif={source}
-              height={148}
-              selectedNotes={selectedNotes}
-              onToggleNote={toggleNote}
-            />
-          </div>
-          <div className="bay-head-row">
-            <span className="micro-head">Part channels</span>
-            <span className="micro-dim">Lock = pass through · vary = patch to LLM</span>
-          </div>
-          {hasParts ? (
-            <div className="channel-strips">
-              {source.parts.map((p, i) => {
-                const armedStrip = partState[i] === 'vary'
-                const drums = p.instrument === 'drums'
-                return (
-                  <div
-                    key={i}
-                    ref={(el) => {
-                      stripRefs.current[i] = el
-                    }}
-                    className={`channel-strip${drums ? ' drums' : ''}`}
-                    data-armed={armedStrip}
-                  >
-                    <i className={`cs-swatch part-swatch ${drums ? 'drums' : PART_COLOR_CLASSES[i]}`} />
-                    <span className="cs-name">{p.name}</span>
-                    <span className="cs-inst">{drums ? 'GM kit' : p.instrument}</span>
-                    <span className="spacer" />
-                    <Tooltip label="Locked parts are copied into every child verbatim">
-                      <HardToggle
-                        on={partState[i] === 'lock'}
-                        label={
-                          partState[i] === 'lock' ? (
-                            <>
-                              lock <LockSimpleIcon size={8} weight="fill" />
-                            </>
-                          ) : (
-                            'lock'
-                          )
-                        }
-                        onChange={(on) => setPart(i, on ? 'lock' : 'vary')}
-                      />
-                    </Tooltip>
-                    <Tooltip label="Armed parts are the only thing the LLM rewrites">
-                      <HardToggle
-                        on={armedStrip}
-                        label={
-                          armedStrip ? (
-                            <>
-                              vary <CircleIcon size={6} weight="fill" />
-                            </>
-                          ) : (
-                            'vary'
-                          )
-                        }
-                        color={drums ? 'yellow' : 'accent'}
-                        onChange={(on) => setPart(i, on ? 'vary' : 'lock')}
-                      />
-                    </Tooltip>
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <span className="micro-dim">
-              Partless motif — plays on the transport sound; mutations rewrite the whole line.
-            </span>
-          )}
-          <div className="lineage-row">
-            <span style={{ letterSpacing: '.14em', color: 'var(--faint)' }}>Lineage</span>
-            {chain.map((m, i) => (
-              <span key={m.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                {i > 0 && <span className="lineage-arrow">→</span>}
-                <Tooltip label={m.name}>
-                  <button
-                    className="lineage-chip"
-                    data-current={m.id === source.id}
-                    onClick={() =>
-                      m.id !== source.id && dispatch({ type: 'SET_MUTATION_TARGET', id: m.id })
-                    }
-                  >
-                    {m.id === source.id ? 'THIS' : lineageLabel(m)}
-                  </button>
-                </Tooltip>
-              </span>
-            ))}
-          </div>
-        </section>
-
-        <section className="module bay-module" ref={transformModuleRef}>
-          <div className="bay-head-row">
-            <span className="micro-head">Transform — unlocked parts only</span>
-            <span className="micro-dim">
-              {hasParts ? `${armed.length} of ${source.parts.length} armed` : 'whole motif'}
-            </span>
-          </div>
-          <div className="transform-grid">
-            <Tooltip label="Flip the contour upside down around the first note — rises become falls">
-              <button className="hw-key" disabled={transformsDisabled} onClick={() => apply({ type: 'inversion' })}>
-                Invert
-              </button>
-            </Tooltip>
-            <Tooltip label="Play the motif backwards in time">
-              <button className="hw-key" disabled={transformsDisabled} onClick={() => apply({ type: 'retrograde' }, false)}>
-                Retro
-              </button>
-            </Tooltip>
-            <Tooltip
-              label={`Double every duration — same notes at half speed, twice the bars${source.bars * 2 > 8 ? ` (result will be ${source.bars * 2} bars, beyond the 2–8 bar range)` : ''}`}
-            >
-              <button className="hw-key" disabled={transformsDisabled} onClick={() => apply({ type: 'augment' }, false)}>
-                Aug ×2{source.bars * 2 > 8 ? ' ⚠' : ''}
-              </button>
-            </Tooltip>
-            <Tooltip label="Halve every duration — same notes at double speed, half the bars">
-              <button className="hw-key" disabled={transformsDisabled} onClick={() => apply({ type: 'diminish' }, false)}>
-                Dim ×.5
-              </button>
-            </Tooltip>
-          </div>
-          <div className="transform-aux">
-            <Tooltip label="Backwards and upside down — the most disguised transform">
-              <button
-                className="hw-key"
-                disabled={transformsDisabled}
-                onClick={() => apply({ type: 'retrogradeInversion' })}
-              >
-                R-Inv
-              </button>
-            </Tooltip>
-            <Tooltip label="Shift every pitch by the chosen number of semitones (+12 = up an octave)">
-              <button
-                className="hw-key"
-                disabled={transformsDisabled}
-                onClick={() => apply({ type: 'transpose', semitones: transposeBy })}
-              >
-                Transpose
-              </button>
-            </Tooltip>
-            <NumberInput
-              w={62}
-              size="xs"
-              min={-12}
-              max={12}
-              value={transposeBy}
-              onChange={(v) => setTransposeBy(Number(v) || 0)}
-            />
-            <Tooltip label="Recolor the motif: keep each note's scale degree but re-spell it in the target mode">
-              <button
-                className="hw-key"
-                disabled={transformsDisabled}
-                onClick={() => apply({ type: 'modeSwap', targetMode })}
-              >
-                Mode swap
-              </button>
-            </Tooltip>
-            <Select
-              w={110}
-              size="xs"
-              value={targetMode}
-              onChange={(v) => v && setTargetMode(v as Mode)}
-              data={MODES.filter((m) => m !== source.mode)}
-            />
-          </div>
-          <div className="transform-aux">
-            <Tooltip label="Move the notes selected on the source LCD up one octave (click notes to select)">
-              <button
-                className="hw-key"
-                disabled={selectedNotes.size === 0}
-                onClick={() => apply({ type: 'octaveDisplace', noteIndices: [...selectedNotes], direction: 1 })}
-              >
-                8va ↑
-              </button>
-            </Tooltip>
-            <Tooltip label="Move the notes selected on the source LCD down one octave (click notes to select)">
-              <button
-                className="hw-key"
-                disabled={selectedNotes.size === 0}
-                onClick={() => apply({ type: 'octaveDisplace', noteIndices: [...selectedNotes], direction: -1 })}
-              >
-                8vb ↓
-              </button>
-            </Tooltip>
-            <span className="micro-dim">click notes on the source LCD to select them</span>
-          </div>
-
-          <div className="llm-section">
-            <span className="micro-head">
-              LLM mutate
-              {hasParts && armedNames.length > 0 && (
-                <>
-                  {' — armed: '}
-                  {armedNames.map((a, j) => (
-                    <span key={a.i}>
-                      {j > 0 && ' + '}
-                      <span className={`armed-name ${a.drums ? 'yellow' : 'accent'}`}>{a.name}</span>
-                    </span>
-                  ))}
-                </>
-              )}
-            </span>
-            <Textarea
-              rows={2}
-              placeholder='e.g. "keep the lead untouched; reharmonize darker and loosen the groove"'
-              value={brief}
-              onChange={(e) => setBrief(e.currentTarget.value)}
-            />
-            <div className="transform-aux">
-              <Tooltip label="Children keep the parent's exact note timings — only pitches (and velocities) change">
-                <HardToggle on={lockRhythm} label="lock rhythm" onChange={setLockRhythm} />
-              </Tooltip>
-              <span className="micro-dim" style={{ lineHeight: 1.5 }}>
-                locked parts are copied
-                <br />
-                into every child verbatim
-              </span>
-              <span className="spacer" />
-              <Tooltip
-                label={
-                  hasParts && armed.length === 0
-                    ? 'Arm at least one part with VARY first'
-                    : 'Run 5 LLM variations of the armed parts'
-                }
-              >
-                <button
-                  className="hw-key accent"
-                  disabled={busy || !brief.trim() || (hasParts && armed.length === 0)}
-                  onClick={() => void runLlmMutation(brief)}
-                >
-                  {busy ? (
-                    'Running…'
-                  ) : (
-                    <>
-                      Run <CaretRightIcon size={10} weight="fill" />
-                    </>
-                  )}
-                </button>
-              </Tooltip>
-              <Tooltip label="Free rein: reinterpret texture, rhythm, or mood while keeping a recognizable kernel">
-                <button
-                  className="hw-key"
-                  disabled={busy || (hasParts && armed.length === 0)}
-                  onClick={() => void runLlmMutation(SURPRISE_MUTATION_BRIEF)}
-                >
-                  <DiceFiveIcon size={13} weight="fill" />
-                </button>
-              </Tooltip>
-            </div>
-            {message && <span className="micro-dim">{message}</span>}
-          </div>
-        </section>
-      </div>
-
-      {/* -------- middle column: children -------- */}
-      <div className="bay-children">
-        {children.length === 0 && !busy && (
-          <div className="empty-note">
-            No variants yet — arm a part and RUN, or fire a deterministic transform.
-          </div>
-        )}
-        {children.map((c) => (
-          <ChildCard
-            key={c.id}
-            child={c}
-            isAbTarget={abSide === 'B' && abChild?.id === c.id}
-            onSelectAb={() => setAbChildId(c.id)}
-            mixForPlayback={mixForPlayback}
-            cardRef={(el) => {
-              if (el) childRefs.current.set(c.id, el)
-              else childRefs.current.delete(c.id)
-            }}
-          />
-        ))}
-      </div>
-
-      {/* -------- right column -------- */}
-      <div className="bay-right">
-        <span className="micro-head">A/B audition</span>
-        <section className="module bay-module">
-          <span className="micro-dim" style={{ lineHeight: 1.6 }}>
-            Flip between parent and child while looping — only the varied part changes under your
-            ear
-          </span>
-          <div className="ab-buttons">
-            <button className="hw-key" data-latched={abSide === 'A'} onClick={() => audition('A')}>
-              A · Source
-            </button>
-            <button
-              className="hw-key"
-              data-latched={abSide === 'B'}
-              disabled={!abChild}
-              onClick={() => audition('B')}
-            >
-              B · Child
-            </button>
-          </div>
-          <Tooltip label="Loop the phrase; latching the other side swaps on the next bar boundary">
-            <HardToggle on={abLoop} label="loop · swap on bar" onChange={setAbLoop} />
+    <div className="bay">
+      <section className="module bay-module bay-transport">
+        <Group gap={12} wrap="nowrap">
+          <Tooltip label="Play/stop the mix — selected takes per part, looped (Space)">
+            <PlayRound size="lg" playing={mixPlaying} loading={mixLoading} onClick={toggleMix} />
           </Tooltip>
-          {abChild && <span className="micro-dim">B → {abChild.name}</span>}
-        </section>
-
-        {busy && (
-          <div className="bay-pending">
-            Mutating{' '}
-            {hasParts && armedNames.length > 0
-              ? armedNames.map((a) => a.name).join('+')
-              : 'motif'}{' '}
-            · 5 inbound
-          </div>
-        )}
-
-        <section className="module cable-legend">
-          <span className="micro-head">Cable legend</span>
-          <span className="cl-row">
-            <i className="cable-sample" style={{ background: ACCENT }} />
-            var · melodic channel
-          </span>
-          <span className="cl-row">
-            <i className="cable-sample" style={{ background: YELLOW }} />
-            var · drums channel
-          </span>
-          <span className="cl-row">
-            <i className="cable-sample" style={{ background: GREEN }} />
-            deterministic transform
-          </span>
-          <span className="cl-row">
-            <i
-              className="cable-sample"
-              style={{ background: `repeating-linear-gradient(90deg, ${GREEN} 0 4px, transparent 4px 9px)` }}
-            />
-            pending patch
-          </span>
-          <span className="cl-note">
-            Cables leave from the armed part's jack — locked parts never patch out
-          </span>
-        </section>
-
-        <section className="module vu-module">
-          <div className="vu-bars">
-            {(hasParts ? source.parts : [{ name: 'all', instrument: 'synth' }]).flatMap((p, i) => {
-              const colors = ['var(--note-lead)', 'var(--note-harmony)', 'var(--note-bass)', 'var(--note-drums)']
-              const color = p.instrument === 'drums' ? 'var(--note-drums)' : colors[i % colors.length]
-              const anyPlaying = engine.getSnapshot().playingMotifId !== null
-              const style = (d: number): React.CSSProperties => ({
-                background: color,
-                animationDelay: `${d}s`,
-                animationDuration: `${0.8 + i * 0.2}s`,
-                animationPlayState: anyPlaying || isPlaying || isLoading ? 'running' : 'paused',
-              })
-              return [
-                <i key={`${i}a`} style={style(i * 0.15)} />,
-                <i key={`${i}b`} style={style(i * 0.15 + 0.3)} />,
-              ]
+          <Stack gap={2} style={{ minWidth: 0 }}>
+            <span className="bay-title">{source.name}</span>
+            <span className="micro-dim" style={{ whiteSpace: 'nowrap' }}>
+              mix · {source.key} {source.mode.slice(0, 3)} · {source.bars}B · {source.tempo} BPM
+            </span>
+          </Stack>
+          <Divider orientation="vertical" />
+          {/* what the mix currently plays, part by part */}
+          <Group gap={6} style={{ flex: 1, minWidth: 0 }}>
+            {rowParts.map((p) => {
+              const sel = selection.get(p.index)
+              return (
+                <Tooltip
+                  key={p.index}
+                  label={
+                    sel
+                      ? 'This part plays the selected take — Enter on its origin cell reverts'
+                      : 'This part plays the original'
+                  }
+                >
+                  <Badge
+                    size="sm"
+                    radius="sm"
+                    variant="outline"
+                    className={`mix-chip${sel ? ' swapped' : ''}${p.isDrums ? ' drums' : ''}`}
+                  >
+                    {p.name}: {sel ? provenanceLabel(sel) : 'original'}
+                  </Badge>
+                </Tooltip>
+              )
             })}
-          </div>
-          <div className="vu-label">
-            Part
-            <br />
-            activity
-            <br />
-            <b>{hasParts ? source.parts.length : 1} channel{hasParts && source.parts.length !== 1 ? 's' : ''}</b>
-          </div>
-        </section>
+          </Group>
+          <span className="kbd-legend" style={{ whiteSpace: 'nowrap' }}>
+            <Kbd>space</Kbd> loop mix
+          </span>
+        </Group>
+        {/* the combined mix: every part at its currently selected take */}
+        <LcdRoll motif={mix} height={96} />
+        <div className="lineage-row">
+          <span style={{ letterSpacing: '.14em', color: 'var(--faint)' }}>Lineage</span>
+          {chain.map((m, i) => (
+            <span key={m.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              {i > 0 && <span className="lineage-arrow">→</span>}
+              <Tooltip label={m.name}>
+                <button
+                  className="lineage-chip"
+                  data-current={m.id === source.id}
+                  onClick={() =>
+                    m.id !== source.id && dispatch({ type: 'SET_MUTATION_TARGET', id: m.id })
+                  }
+                >
+                  {m.id === source.id ? 'THIS' : lineageLabel(m)}
+                </button>
+              </Tooltip>
+            </span>
+          ))}
+        </div>
+      </section>
 
-        <button
-          className="hw-key"
-          aria-label="Close bay"
-          onClick={() => {
-            engine.stop()
-            dispatch({ type: 'SET_MUTATION_TARGET', id: null })
+      {rowParts.map((p) => (
+        <PartRow
+          key={p.index}
+          source={source}
+          partIndex={p.index}
+          partName={p.name}
+          instrument={p.instrument}
+          isDrums={p.isDrums}
+          roots={trees[p.index] ?? []}
+          originNotes={partNotes(source, p.index)}
+          selectedId={selection.get(p.index)?.id ?? null}
+          selectedTake={selection.get(p.index) ?? null}
+          focus={effFocus.part === p.index ? effFocus : null}
+          showHidden={showHidden}
+          pendingParents={pending.filter((b) => b.part === p.index).map((b) => b.parentNodeId)}
+          mixId={mixId}
+          collapsed={collapsedParts.has(p.index)}
+          onToggleCollapse={() => toggleCollapse(p.index)}
+          advancedOpen={advanced?.part === p.index}
+          onToggleAdvanced={() =>
+            setAdvanced((a) =>
+              a?.part === p.index
+                ? null
+                : { part: p.index, nodeId: effFocus.part === p.index ? effFocus.nodeId : null },
+            )
+          }
+          callbacks={{
+            onFocus: (nodeId) => focusNode(p.index, nodeId),
+            onSelect: (node) => applySelection(p.index, node),
+            onMutate: (node) => mutateDefault(p.index, node),
           }}
         >
-          <XIcon size={10} weight="bold" /> Close bay · <b className="hk">esc</b>
-        </button>
-        <span className="kbd-legend" style={{ textAlign: 'center' }}>
-          <b className="hk">space</b> play · <b className="hk">p</b> promote B ·{' '}
-          <b className="hk">esc</b> close
+          {advanced?.part === p.index && (
+            <AdvancedPanel
+              key={`${p.index}:${advanced.nodeId ?? 'origin'}`}
+              source={source}
+              partIndex={p.index}
+              isDrums={p.isDrums}
+              baseTake={advancedNode ? advancedNode.notes : partNotes(source, p.index)}
+              focusLabel={advancedNode ? 'the focused take' : 'the original'}
+              busy={pending.some((b) => b.part === p.index)}
+              onApplyTransform={(t) => applyPartTransform(p.index, advancedNode, t)}
+              onRunBrief={(brief, lockRhythm) =>
+                runMutation(p.index, advancedNode, brief, lockRhythm)
+              }
+            />
+          )}
+        </PartRow>
+      ))}
+
+      <div className="bay-footer">
+        <Tooltip label="Hide every take that isn't on a selected path — reversible with SHOW HIDDEN">
+          <Button onClick={rebase}>Rebase</Button>
+        </Tooltip>
+        <Tooltip label="Reveal hidden takes (ghosted) so they can be reselected">
+          <Button data-latched={showHidden} onClick={() => setShowHidden((s) => !s)}>
+            Show hidden
+          </Button>
+        </Tooltip>
+        {showHidden && <Button onClick={unhideAll}>Unhide all</Button>}
+        <Tooltip label="Permanently delete hidden takes and everything off the selected paths">
+          <Button data-danger={pruneArmed} onClick={prune}>
+            {pruneArmed ? 'Prune — sure?' : 'Prune'}
+          </Button>
+        </Tooltip>
+        {message && <span className="micro-dim bay-message">{message}</span>}
+        <span className="spacer" />
+        <span className="kbd-legend">
+          <Kbd>space</Kbd> mix · <Kbd>enter</Kbd> use take · <Mark className="hk">m</Mark>utate ·{' '}
+          <Mark className="hk">a</Mark>dvanced · <Mark className="hk">p</Mark>romote ·{' '}
+          <Kbd>esc</Kbd> close
         </span>
+        <Button
+          aria-label="Close bay"
+          onClick={closeBay}
+          leftSection={<XIcon size={10} weight="bold" />}
+        >
+          <span>
+            Close · <Kbd>esc</Kbd>
+          </span>
+        </Button>
+        <Tooltip
+          label={
+            selection.size === 0
+              ? 'Select at least one take (Enter) — the mix currently equals the source'
+              : 'Add the current mix to the family as a new take'
+          }
+        >
+          <button className="promote-big" disabled={selection.size === 0} onClick={promote}>
+            Promote mix
+          </button>
+        </Tooltip>
       </div>
     </div>
   )

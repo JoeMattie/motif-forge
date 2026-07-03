@@ -1,4 +1,4 @@
-import type { Concept, Motif, Rating, Sound } from '../types'
+import type { Concept, Motif, PartVariation, Rating, Sound } from '../types'
 import { rootIdOf } from '../core/families'
 
 export type View = 'triage' | 'library' | 'concepts'
@@ -28,6 +28,8 @@ export interface AppState {
   hydrated: boolean
   motifs: Map<string, Motif>
   concepts: Map<string, Concept>
+  /** Mutation-bay tree nodes, keyed by id (persisted alongside motifs). */
+  partVariations: Map<string, PartVariation>
   selectedId: string | null
   mutationTargetId: string | null // face motif whose family is open in the mutation bay
   view: View
@@ -43,6 +45,7 @@ export const initialState: AppState = {
   hydrated: false,
   motifs: new Map(),
   concepts: new Map(),
+  partVariations: new Map(),
   selectedId: null,
   mutationTargetId: null,
   view: 'triage',
@@ -61,8 +64,12 @@ export const initialState: AppState = {
 }
 
 export type Action =
-  | { type: 'HYDRATED'; motifs: Motif[]; concepts: Concept[] }
+  | { type: 'HYDRATED'; motifs: Motif[]; concepts: Concept[]; partVariations: PartVariation[] }
   | { type: 'MOTIFS_ADDED'; motifs: Motif[] }
+  /** Add or update bay tree nodes; callers send full records (add, select/deselect, hide/unhide). */
+  | { type: 'PART_VARIATIONS_UPSERT'; variations: PartVariation[] }
+  /** PRUNE: hard-delete bay tree nodes (motifs are only ever soft-discarded; these aren't motifs). */
+  | { type: 'PART_VARIATIONS_DELETED'; ids: string[] }
   | { type: 'MOTIF_RATED'; id: string; rating: Rating }
   | { type: 'MOTIF_DISCARDED'; id: string }
   | { type: 'MOTIF_RESTORED'; id: string }
@@ -101,7 +108,19 @@ export function reducer(state: AppState, action: Action): AppState {
       for (const m of action.motifs) motifs.set(m.id, m)
       const concepts = new Map(state.concepts)
       for (const c of action.concepts) concepts.set(c.id, c)
-      return { ...state, hydrated: true, motifs, concepts }
+      const partVariations = new Map(state.partVariations)
+      for (const v of action.partVariations) partVariations.set(v.id, v)
+      return { ...state, hydrated: true, motifs, concepts, partVariations }
+    }
+    case 'PART_VARIATIONS_UPSERT': {
+      const partVariations = new Map(state.partVariations)
+      for (const v of action.variations) partVariations.set(v.id, v)
+      return { ...state, partVariations }
+    }
+    case 'PART_VARIATIONS_DELETED': {
+      const partVariations = new Map(state.partVariations)
+      for (const id of action.ids) partVariations.delete(id)
+      return { ...state, partVariations }
     }
     case 'MOTIFS_ADDED': {
       const motifs = new Map(state.motifs)

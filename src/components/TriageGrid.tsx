@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Tooltip } from '@mantine/core'
+import { Button, Kbd, Mark, Tooltip } from '@mantine/core'
 import type { Motif } from '../types'
 import { buildFamilies, rootIdOf } from '../core/families'
 import { useAppDispatch, useAppState } from '../store/AppContext'
@@ -120,9 +120,11 @@ export function TriageGrid() {
       <div className="filter-row">
         {(['all', 'unrated', 'rated', 'discarded'] as Filter[]).map((f) => (
           <Tooltip key={f} label={FILTER_HINTS[f]}>
-            <button className="hw-key" data-latched={filter === f} onClick={() => setFilter(f)}>
-              {f} {counts[f]}
-            </button>
+            <Button data-latched={filter === f} onClick={() => setFilter(f)}>
+              <span>
+                {f} {counts[f]}
+              </span>
+            </Button>
           </Tooltip>
         ))}
         <Tooltip label="Mutating never adds cards to the grid — variants land inside each family's fold-out tray">
@@ -130,10 +132,10 @@ export function TriageGrid() {
         </Tooltip>
         <span className="spacer" />
         <span className="kbd-legend">
-          <b className="hk">← → ↑ ↓</b> nav · <b className="hk">space</b> play ·{' '}
-          <b className="hk">1–5</b> rate · <b className="hk">x</b> discard ·{' '}
-          <b className="hk">u</b> undo · <b className="hk">f</b> fold out ·{' '}
-          <b className="hk">p</b> promote · <b className="hk">m</b> mutate
+          <Kbd>← → ↑ ↓</Kbd> nav · <Kbd>space</Kbd> play · <Kbd>1–5</Kbd> rate ·{' '}
+          <Kbd>x</Kbd> discard · <Mark className="hk">u</Mark>ndo ·{' '}
+          <Mark className="hk">f</Mark>old out · <Mark className="hk">p</Mark>romote ·{' '}
+          <Mark className="hk">m</Mark>utate
         </span>
       </div>
       {visible.length === 0 && state.pending.length === 0 ? (

@@ -4,10 +4,13 @@ import type { PersistenceAdapter } from './persistence'
 export const memoryAdapter: PersistenceAdapter = {
   async init() {},
   async loadAll() {
-    return { motifs: [], concepts: [] }
+    return { motifs: [], concepts: [], partVariations: [] }
   },
   async putMotif() {},
   async putMotifs() {},
   async putConcept() {},
   async deleteConcept() {},
+  async putPartVariations() {},
+  async deletePartVariations() {},
+  async destroy() {},
 }

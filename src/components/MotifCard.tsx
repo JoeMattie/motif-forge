@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Tooltip } from '@mantine/core'
+import { Button, Kbd, Mark, Tooltip } from '@mantine/core'
 import { CaretDownIcon, CaretRightIcon } from '@phosphor-icons/react'
 import type { Part, Rating as RatingValue } from '../types'
 import type { Family } from '../core/families'
@@ -106,7 +106,7 @@ export function MotifCard({ family, selected, expanded, onToggleExpand, conceptR
       {discarded ? (
         <div className="card-footer">
           <span className="discard-chip">
-            Discarded · <b className="hk">U</b> to undo
+            Discarded · <Kbd>u</Kbd> to undo
           </span>
           <span className="spacer" />
           <button
@@ -141,19 +141,26 @@ export function MotifCard({ family, selected, expanded, onToggleExpand, conceptR
           <span className="spacer" />
           {onToggleExpand && (
             <Tooltip label="Fold the family tray out/in (F) — variants live inside, the pool count never inflates">
-              <button
-                className="family-chip"
+              <Button
+                size="compact-xs"
                 aria-label={`Family ${Math.max(1, family.variants.length)}`}
-                data-open={expanded ?? false}
+                data-latched={expanded ?? false}
                 onClick={(e) => {
                   e.stopPropagation()
                   onToggleExpand()
                 }}
+                rightSection={
+                  expanded ? (
+                    <CaretDownIcon size={8} weight="bold" />
+                  ) : (
+                    <CaretRightIcon size={8} weight="bold" />
+                  )
+                }
               >
-                <b className="hk">F</b>amily{' '}
-                {expanded ? <CaretDownIcon size={8} weight="bold" /> : <CaretRightIcon size={8} weight="bold" />}{' '}
-                {Math.max(1, family.variants.length)}
-              </button>
+                <span>
+                  <Mark className="hk">F</Mark>amily {Math.max(1, family.variants.length)}
+                </span>
+              </Button>
             </Tooltip>
           )}
         </div>

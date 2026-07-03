@@ -30,6 +30,31 @@ export const theme = createTheme({
   primaryShade: { light: 6, dark: 6 },
   colors: { forge },
   components: {
+    // Buttons are the app's hardware keys. The look lives in styles.css under
+    // .wb-btn (stamped on every Button root here) so the modifier classes
+    // (accent/green/dark/dashed/danger-text, data-latched, data-danger) can
+    // override it — filled/outline variants keep Mantine's variant colors.
+    Button: {
+      defaultProps: { size: 'compact-sm', variant: 'default' },
+      classNames: { root: 'wb-btn' },
+    },
+    ActionIcon: {
+      defaultProps: { variant: 'subtle', size: 'sm' },
+      classNames: { root: 'wb-action' },
+    },
+    Kbd: { classNames: { root: 'wb-kbd' } },
+    SegmentedControl: {
+      defaultProps: { size: 'xs', withItemsBorders: false },
+      classNames: {
+        root: 'wb-seg',
+        indicator: 'wb-seg-indicator',
+        label: 'wb-seg-label',
+      },
+    },
+    Drawer: {
+      defaultProps: { withCloseButton: false },
+      classNames: { content: 'wb-drawer', body: 'wb-drawer-body' },
+    },
     TextInput: { defaultProps: { size: 'sm' } },
     Textarea: { defaultProps: { size: 'sm' } },
     NumberInput: { defaultProps: { size: 'sm' } },

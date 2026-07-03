@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
-import { Center, Group, Loader, Text } from '@mantine/core'
+import { Center, Drawer, Group, Loader, Text } from '@mantine/core'
+import { engine } from './audio/engine'
 import { useAppDispatch, useAppState } from './store/AppContext'
 import { SAMPLE_MOTIFS } from './core/sampleMotifs'
 import { Header } from './components/Header'
@@ -37,14 +38,17 @@ export function App() {
 
   const baySource = state.mutationTargetId ? state.motifs.get(state.mutationTargetId) : undefined
 
+  const closeBay = () => {
+    engine.stop()
+    dispatch({ type: 'SET_MUTATION_TARGET', id: null })
+  }
+
   return (
     <div className="app">
       <Header />
       <main>
         <div className="view">
-          {baySource ? (
-            <MutationBay key={baySource.id} source={baySource} />
-          ) : state.view === 'triage' ? (
+          {state.view === 'triage' ? (
             state.triageMode === 'grid' ? (
               <TriageGrid />
             ) : (
@@ -58,6 +62,18 @@ export function App() {
         </div>
       </main>
       <TransportStrip />
+      <Drawer
+        opened={baySource !== undefined}
+        onClose={closeBay}
+        position="bottom"
+        size="94%"
+        // The bay owns Escape (blur field → close advanced panel → close bay)
+        // and drives everything from a window keydown, not roving focus.
+        closeOnEscape={false}
+        trapFocus={false}
+      >
+        {baySource && <MutationBay key={baySource.id} source={baySource} />}
+      </Drawer>
     </div>
   )
 }

@@ -201,19 +201,19 @@ describe('drum parts', () => {
 })
 
 describe('parts parsing', () => {
-  test('caps parts at 4 and clamps note part indices into range', () => {
+  test('caps parts at 6 and clamps note part indices into range', () => {
     const motif = rawMotif({
-      parts: Array.from({ length: 6 }, (_, i) => ({ name: `p${i}`, instrument: 'piano' })),
+      parts: Array.from({ length: 8 }, (_, i) => ({ name: `p${i}`, instrument: 'piano' })),
       notes: [
-        { pitch: 60, startBeat: 0, durationBeats: 1, part: 5 },
+        { pitch: 60, startBeat: 0, durationBeats: 1, part: 7 },
         { pitch: 64, startBeat: 1, durationBeats: 1, part: -2 },
         { pitch: 67, startBeat: 2, durationBeats: 1 },
       ],
     })
     const r = validateBatch({ motifs: [motif] }, ctx())
     const m = r.valid[0]
-    expect(m.parts).toHaveLength(4)
-    expect(m.notes[0].part).toBe(3)
+    expect(m.parts).toHaveLength(6)
+    expect(m.notes[0].part).toBe(5)
     expect(m.notes[1].part).toBe(0)
     expect(m.notes[2].part).toBeUndefined()
   })

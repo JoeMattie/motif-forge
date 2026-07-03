@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import type { Motif, Rating } from '../../types'
 import { engine } from '../../audio/engine'
+import { verticalTarget } from '../../core/gridNav'
 import { effectiveTempo } from '../../store/appState'
 import { recordTriageAction } from '../../store/sessionPace'
 import { useAppDispatch, useAppState } from '../../store/AppContext'
@@ -152,10 +153,16 @@ export function useKeyboardTriage(
           e.preventDefault()
           moveTo(index < 0 ? 0 : index + 1)
           break
-        case 'ArrowUp':
+        case 'ArrowUp': {
           e.preventDefault()
-          moveTo(index < 0 ? 0 : index - columns)
+          if (index < 0) {
+            moveTo(0)
+            break
+          }
+          const up = verticalTarget(index, columns, visibleMotifs.length, -1)
+          if (up !== null) moveTo(up)
           break
+        }
         case 'ArrowDown': {
           e.preventDefault()
           // descend into the open tray from its anchor card
@@ -166,7 +173,12 @@ export function useKeyboardTriage(
               break
             }
           }
-          moveTo(index < 0 ? 0 : index + columns)
+          if (index < 0) {
+            moveTo(0)
+            break
+          }
+          const down = verticalTarget(index, columns, visibleMotifs.length, 1)
+          if (down !== null) moveTo(down)
           break
         }
         case ' ':

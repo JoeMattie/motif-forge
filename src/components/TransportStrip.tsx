@@ -48,7 +48,11 @@ export function TransportStrip() {
     engine.subscribe,
     () => engine.getSnapshot().playingMotifId,
   )
-  const playingMotif = playingId ? state.motifs.get(playingId) : undefined
+  // Synthetic playback ids (the bay's composite mix, solo stems) are formed as
+  // `<motifId>::<tag>` — fall back to the base motif for the readout.
+  const playingMotif = playingId
+    ? (state.motifs.get(playingId) ?? state.motifs.get(playingId.split('::')[0]))
+    : undefined
 
   // Triage progress counts FAMILIES: a family is done once its face is rated
   // or the family is discarded.

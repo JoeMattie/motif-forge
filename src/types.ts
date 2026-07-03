@@ -39,6 +39,9 @@ export type MotifSource =
   | { kind: 'transform'; parentId: string; transform: string }
   /** variedParts: indices of the parts the LLM was armed to rewrite (locked parts round-trip verbatim). */
   | { kind: 'llm-mutation'; parentId: string; brief: string; variedParts?: number[] }
+  /** Promoted from the mutation bay: per-part selected variations mixed into one take.
+   * variedParts: indices of the parts whose selection deviates from the parent. */
+  | { kind: 'bay-mix'; parentId: string; variedParts: number[] }
 
 export type Rating = 0 | 1 | 2 | 3 | 4 | 5
 
@@ -85,9 +88,37 @@ export interface GenerationBrief {
   allowChromatic: boolean
   texture: Texture // lead melody with light harmony vs free polyphony
   includeRhythm: boolean // ask for a GM-pitch drums part
+  /** EXTRA toggle: demand a fuller arrangement — 4–6 parts with distinct roles. */
+  extraInstruments: boolean
 }
 
 export function parentIdOf(m: Motif): string | null {
   const s = m.source
-  return s.kind === 'transform' || s.kind === 'llm-mutation' ? s.parentId : null
+  return s.kind === 'transform' || s.kind === 'llm-mutation' || s.kind === 'bay-mix'
+    ? s.parentId
+    : null
+}
+
+/** How a mutation-bay tree node was produced. */
+export type PartVariationProvenance =
+  | { kind: 'llm'; brief: string }
+  | { kind: 'transform'; transform: string }
+
+/**
+ * One node in a per-part mutation tree in the bay: an alternative take on a
+ * single part of `sourceMotifId`. Trees persist; PRUNE hard-deletes nodes
+ * (unlike motifs, which are only ever soft-discarded).
+ */
+export interface PartVariation {
+  id: string
+  /** The motif whose bay workspace owns this tree (the SET_MUTATION_TARGET motif). */
+  sourceMotifId: string
+  partIndex: number // 0 for partless motifs
+  parentNodeId: string | null // null = direct child of the original part
+  notes: Note[] // this part's notes only (note.part preserved = partIndex)
+  provenance: PartVariationProvenance
+  /** ≤1 selected node per (sourceMotifId, partIndex); none = the original part plays. */
+  selected: boolean
+  hidden: boolean // REBASE sets, SHOW HIDDEN clears, PRUNE deletes
+  createdAt: number
 }

@@ -51,6 +51,7 @@ class AudioEngine {
   private startBeat = 0
   private secondsPerBeat = 0.5
   private totalBeats = 0
+  private looping = false
   private endTimer: number | null = null
 
   private ensureCtx(): AudioContext {
@@ -134,14 +135,42 @@ class AudioEngine {
         scheduleMetronome(ctx, playGain, this.totalBeats - fromBeat, bpb, opts.tempo, t0)
       if (opts.drone) scheduleDrone(ctx, playGain, motif.key, endTime - t0, t0)
 
-      this.endTimer = window.setTimeout(
-        () => {
-          if (this.snapshot.playingMotifId !== motif.id) return
-          if (opts.loop) this.play(motif, { ...opts, fromBeat: 0 })
-          else this.stop()
-        },
-        (endTime - ctx.currentTime + (opts.loop ? 0 : 0.5)) * 1000,
-      )
+      this.looping = !!opts.loop
+      if (opts.loop) {
+        // Gapless loop: keep the instruments alive and schedule each next
+        // iteration ~300ms before the boundary, at the exact WebAudio end
+        // timestamp — no teardown/rebuild, no setTimeout jitter in the audio.
+        // getPositionBeats wraps by modulo, so the playhead follows for free.
+        const scheduleNext = (iterStart: number) => {
+          if (token !== this.playToken) return
+          const iterEnd = scheduleMotif(
+            active.map((a) => a.inst),
+            motif,
+            opts.tempo,
+            iterStart,
+            0,
+          )
+          if (opts.metronome)
+            scheduleMetronome(ctx, playGain, this.totalBeats, bpb, opts.tempo, iterStart)
+          if (opts.drone) scheduleDrone(ctx, playGain, motif.key, iterEnd - iterStart, iterStart)
+          this.endTimer = window.setTimeout(
+            () => scheduleNext(iterEnd),
+            Math.max(0, (iterEnd - ctx.currentTime - 0.3) * 1000),
+          )
+        }
+        this.endTimer = window.setTimeout(
+          () => scheduleNext(endTime),
+          Math.max(0, (endTime - ctx.currentTime - 0.3) * 1000),
+        )
+      } else {
+        this.endTimer = window.setTimeout(
+          () => {
+            if (this.snapshot.playingMotifId !== motif.id) return
+            this.stop()
+          },
+          (endTime - ctx.currentTime + 0.5) * 1000,
+        )
+      }
 
       this.snapshot = { playingMotifId: motif.id, loading: false }
       this.emit()
@@ -163,6 +192,7 @@ class AudioEngine {
 
   private stopInternal(): void {
     this.playToken++
+    this.looping = false
     if (this.endTimer !== null) {
       clearTimeout(this.endTimer)
       this.endTimer = null
@@ -188,10 +218,13 @@ class AudioEngine {
     }
   }
 
-  /** Current position in beats of the playing motif, or null. */
+  /** Current position in beats of the playing motif, or null. Wraps while looping. */
   getPositionBeats(): number | null {
     if (!this.ctx || this.snapshot.playingMotifId === null || this.snapshot.loading) return null
     const beats = this.startBeat + (this.ctx.currentTime - this.startTime) / this.secondsPerBeat
+    if (this.looping && this.totalBeats > 0) {
+      return ((beats % this.totalBeats) + this.totalBeats) % this.totalBeats
+    }
     return Math.max(0, Math.min(beats, this.totalBeats))
   }
 

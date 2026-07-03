@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Tooltip } from '@mantine/core'
+import { Button, Kbd, Mark, Tooltip } from '@mantine/core'
 import {
   ArrowsClockwiseIcon,
   CaretLeftIcon,
@@ -142,7 +142,7 @@ export function FocusTriage() {
               </span>
             </span>
           </div>
-          <LcdRoll motif={face} height={250} deep minSpan={26} />
+          <LcdRoll motif={face} height={132} deep minSpan={20} />
           <div className="focus-lcd-foot">
             <span className="legend">
               {(face.parts.length > 0 ? face.parts : [{ name: 'all', instrument: state.transport.sound }]).map(
@@ -190,24 +190,29 @@ export function FocusTriage() {
           </div>
           <div className="focus-caption">Rate — auto-advances to next</div>
           <div className="focus-btn-row">
-            <button className="hw-key danger-text" aria-label="Discard" onClick={discard}>
-              <XIcon size={11} weight="bold" /> Discard (<b className="hk">x</b>)
-            </button>
-            <button
-              className="hw-key"
+            <Button
+              className="danger-text"
+              aria-label="Discard"
+              onClick={discard}
+              leftSection={<XIcon size={11} weight="bold" />}
+            >
+              <span>
+                Discard (<Mark className="hk">x</Mark>)
+              </span>
+            </Button>
+            <Button
               aria-label="Mutate"
               onClick={() => dispatch({ type: 'SET_MUTATION_TARGET', id: face.id })}
+              leftSection={<ArrowsClockwiseIcon size={11} weight="bold" />}
             >
-              <ArrowsClockwiseIcon size={11} weight="bold" /> <b className="hk">M</b>utate
-            </button>
+              <span>
+                <Mark className="hk">M</Mark>utate
+              </span>
+            </Button>
           </div>
           <div className="focus-btn-row">
-            <button className="hw-key" onClick={exportMidi}>
-              .MID
-            </button>
-            <button className="hw-key" onClick={() => void exportWav()}>
-              .WAV
-            </button>
+            <Button onClick={exportMidi}>.MID</Button>
+            <Button onClick={() => void exportWav()}>.WAV</Button>
           </div>
           <div className="focus-telemetry">
             <div className="row">
@@ -229,8 +234,8 @@ export function FocusTriage() {
         <div className="queue-head">
           <span className="micro-head">Queue — {unratedCount} unrated remaining</span>
           <span className="kbd-legend">
-            <b className="hk">space</b> plays · <b className="hk">1–5</b> rates &amp; advances ·{' '}
-            <b className="hk">x</b> discards &amp; advances
+            <Kbd>space</Kbd> plays · <Kbd>1–5</Kbd> rates &amp; advances · <Kbd>x</Kbd> discards
+            &amp; advances
           </span>
         </div>
         <div className="queue-cards">

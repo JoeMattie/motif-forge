@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Tooltip } from '@mantine/core'
+import { ActionIcon, Button, Mark, Tooltip } from '@mantine/core'
 import {
   ArrowRightIcon,
   CaretUpIcon,
@@ -34,10 +34,13 @@ function TrayCard({ motif, family, isOrigin }: { motif: Motif; family: Family; i
     if (selected) cardRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [selected])
 
-  // Locked parts render dimmed so the varied part pops.
+  // Unvaried parts render dimmed so the varied part pops.
   const dimParts = (() => {
-    if (motif.source.kind !== 'llm-mutation' || !motif.source.variedParts?.length) return undefined
-    const varied = new Set(motif.source.variedParts)
+    const s = motif.source
+    const variedParts =
+      s.kind === 'llm-mutation' || s.kind === 'bay-mix' ? s.variedParts : undefined
+    if (!variedParts?.length) return undefined
+    const varied = new Set(variedParts)
     return new Set(motif.parts.map((_, i) => i).filter((i) => !varied.has(i)))
   })()
 
@@ -108,16 +111,17 @@ function TrayCard({ motif, family, isOrigin }: { motif: Motif; family: Family; i
         />
         <span className="spacer" />
         {!promoted && (
-          <button
-            className="text-btn"
-            title="Discard this variant"
-            onClick={(e) => {
-              e.stopPropagation()
-              dispatch({ type: 'MOTIF_DISCARDED', id: motif.id })
-            }}
-          >
-            <XIcon size={10} weight="bold" />
-          </button>
+          <Tooltip label="Discard this variant">
+            <ActionIcon
+              aria-label="Discard this variant"
+              onClick={(e) => {
+                e.stopPropagation()
+                dispatch({ type: 'MOTIF_DISCARDED', id: motif.id })
+              }}
+            >
+              <XIcon size={10} weight="bold" />
+            </ActionIcon>
+          </Tooltip>
         )}
         <Tooltip label="Make this take the family's face — what the grid shows, plays, and exports">
           <button
@@ -139,7 +143,7 @@ function TrayCard({ motif, family, isOrigin }: { motif: Motif; family: Family; i
               </>
             ) : (
               <>
-                <b className="hk">P</b>romote
+                <Mark className="hk">P</Mark>romote
               </>
             )}
           </button>
@@ -164,14 +168,26 @@ export function FamilyTray({ family, onFold }: { family: Family; onFold: () => v
           exports
         </span>
         <span className="spacer" />
-        <Tooltip label="Open the patchbay: per-part lock/vary, deterministic transforms, LLM mutation (M)">
-          <button className="hw-key" aria-label="Open mutation bay" onClick={openBay}>
-            Open <b className="hk">m</b>utation bay <ArrowRightIcon size={10} weight="bold" />
-          </button>
+        <Tooltip label="Open the workspace: per-part mutation trees, transforms, LLM takes (M)">
+          <Button
+            aria-label="Open mutation bay"
+            onClick={openBay}
+            rightSection={<ArrowRightIcon size={10} weight="bold" />}
+          >
+            {/* single span: the Button label is a flex container, which would
+                collapse the whitespace between bare text nodes */}
+            <span>
+              OPEN <Mark className="hk">M</Mark>UTATION BAY
+            </span>
+          </Button>
         </Tooltip>
-        <button className="hw-key" aria-label="Fold" onClick={onFold}>
-          <CaretUpIcon size={10} weight="bold" /> <b className="hk">F</b>old
-        </button>
+        <Button
+          aria-label="Fold"
+          onClick={onFold}
+          leftSection={<CaretUpIcon size={10} weight="bold" />}
+        >
+          <Mark className="hk">F</Mark>OLD
+        </Button>
       </div>
       <div className="family-tray-strip">
         <TrayCard motif={family.root} family={family} isOrigin />

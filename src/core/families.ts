@@ -97,5 +97,16 @@ export function variantBadge(m: Motif): { label: string; kind: 'transform' | 'va
     }
     return { label: 'VAR · LLM', kind: 'var', parts }
   }
+  if (m.source.kind === 'bay-mix') {
+    const parts = m.source.variedParts
+    if (parts.length > 0 && m.parts.length > 0) {
+      const names = parts
+        .map((i) => m.parts[i]?.name ?? `P${i}`)
+        .map((n) => n.toUpperCase())
+        .join('+')
+      return { label: `MIX · ${names}`, kind: 'var', parts }
+    }
+    return { label: 'MIX', kind: 'var', parts }
+  }
   return { label: m.source.kind === 'seed' ? 'SEED' : 'GEN', kind: 'transform', parts: [] }
 }

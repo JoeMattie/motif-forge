@@ -13,7 +13,9 @@ const VALID_INSTRUMENTS = new Set<PartInstrument>([
   'drums',
 ])
 const VALID_OSCILLATORS = new Set(['sine', 'triangle', 'sawtooth', 'square'])
-export const MAX_PARTS = 4
+// 6 (up from the brief's 4) so the generation panel's EXTRA toggle can ask
+// for fuller arrangements; the 8-voice polyphony cap is unchanged.
+export const MAX_PARTS = 6
 
 export interface ValidationContext {
   key: string

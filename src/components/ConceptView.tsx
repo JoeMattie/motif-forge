@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Menu, TextInput, Tooltip } from '@mantine/core'
+import { ActionIcon, Button, Menu, TextInput, Tooltip } from '@mantine/core'
 import { ArrowRightIcon, PlusIcon, XIcon } from '@phosphor-icons/react'
 import type { Motif, Rating as RatingValue } from '../types'
 import { buildFamilies, variantBadge, type Family } from '../core/families'
@@ -139,12 +139,13 @@ function RootGroup({ family }: { family: Family }) {
               Derived for other tracks — {derived.length}
             </span>
             <Tooltip label="Open the mutation bay pre-scoped to this root to derive a take for another track">
-              <button
-                className="hw-key accent"
+              <Button
+                className="accent"
                 onClick={() => dispatch({ type: 'SET_MUTATION_TARGET', id: root.id })}
+                rightSection={<ArrowRightIcon size={10} weight="bold" />}
               >
-                Transform for new track <ArrowRightIcon size={10} weight="bold" />
-              </button>
+                Transform for new track
+              </Button>
             </Tooltip>
           </div>
           <div className="derive-cards">
@@ -266,17 +267,15 @@ export function ConceptView() {
       <div className="concept-tabs">
         {concepts.map((c) => (
           <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-            <button
-              className="hw-key"
-              data-latched={conceptId === c.id}
-              onClick={() => setConceptId(c.id)}
-            >
-              {c.name} · {countFor(c.id)}
-            </button>
+            <Button data-latched={conceptId === c.id} onClick={() => setConceptId(c.id)}>
+              <span>
+                {c.name} · {countFor(c.id)}
+              </span>
+            </Button>
             {!usedConceptIds.has(c.id) && (
               <Tooltip label="Delete this concept — no motifs are tagged to it">
-                <button
-                  className="text-btn"
+                <ActionIcon
+                  aria-label="Delete concept"
                   onClick={() => {
                     dispatch({ type: 'CONCEPT_DELETED', id: c.id })
                     if (conceptId === c.id)
@@ -284,7 +283,7 @@ export function ConceptView() {
                   }}
                 >
                   <XIcon size={10} weight="bold" />
-                </button>
+                </ActionIcon>
               </Tooltip>
             )}
           </span>
@@ -302,9 +301,13 @@ export function ConceptView() {
             }}
           />
         ) : (
-          <button className="hw-key dashed" onClick={() => setAdding(true)}>
-            <PlusIcon size={10} weight="bold" /> New
-          </button>
+          <Button
+            className="dashed"
+            onClick={() => setAdding(true)}
+            leftSection={<PlusIcon size={10} weight="bold" />}
+          >
+            New
+          </Button>
         )}
         <span className="spacer" />
         <span className="concept-hint">
@@ -333,9 +336,7 @@ export function ConceptView() {
             </button>
           </Tooltip>
           <Tooltip label="Download every take in this concept as .mid files">
-            <button className="hw-key" onClick={exportConcept}>
-              Export concept .MID
-            </button>
+            <Button onClick={exportConcept}>Export concept .MID</Button>
           </Tooltip>
         </div>
       )}

@@ -1,5 +1,13 @@
 import { useState } from 'react'
-import { Textarea, TextInput, Tooltip } from '@mantine/core'
+import {
+  Button,
+  NumberInput,
+  SegmentedControl,
+  Slider,
+  Textarea,
+  TextInput,
+  Tooltip,
+} from '@mantine/core'
 import { CaretDownIcon, CaretRightIcon, DiceFiveIcon } from '@phosphor-icons/react'
 import type { GenerationBrief, Mode } from '../types'
 import { MODES } from '../core/theory'
@@ -13,6 +21,8 @@ import { HardToggle } from './hw/HardToggle'
 
 const KEYS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
 const BARS = [2, 4, 8]
+/** Tick marks at common tempos (ballad → house → d&b). */
+const TEMPO_MARKS = [60, 80, 96, 100, 120, 128, 140, 150, 174].map((value) => ({ value }))
 const MODE_SHORT: Record<Mode, string> = {
   ionian: 'ION',
   dorian: 'DOR',
@@ -39,6 +49,7 @@ export function GenerationPanel() {
   const [allowChromatic, setAllowChromatic] = useState(false)
   const [lead, setLead] = useState(true) // on = 'lead' texture, off = free poly
   const [includeRhythm, setIncludeRhythm] = useState(false)
+  const [extraInstruments, setExtraInstruments] = useState(false)
 
   /** Reuse or create the named concept; returns its id (or null when unnamed). */
   const resolveConceptId = (): string | null => {
@@ -75,7 +86,7 @@ export function GenerationPanel() {
     const brief: GenerationBrief = {
       key,
       mode,
-      tempo,
+      tempo: Math.max(40, Math.min(220, Math.round(tempo))),
       bars,
       timeSig: '4/4',
       concept,
@@ -83,6 +94,7 @@ export function GenerationPanel() {
       allowChromatic,
       texture: lead ? 'lead' : 'poly',
       includeRhythm,
+      extraInstruments,
     }
     const label = concept.trim() || `${key} ${mode}`
     // Polyphonic motif JSON is bulky — cap each call at 5 motifs so the
@@ -98,25 +110,28 @@ export function GenerationPanel() {
     queueBatch(5, 'surprise', () => generateSurpriseBatch(5))
   }
 
-  const summary = `${key} ${mode} · ${tempo} BPM · ${bars} BARS · ${lead ? 'LEAD' : 'POLY'}${includeRhythm ? '+RHYTHM' : ''}${allowChromatic ? '+CHR' : ''}`
+  // Formatted explicitly (no CSS uppercasing) so flats keep their lowercase b: "Eb", not "EB".
+  const summary = `${key} ${mode.toUpperCase()} · ${tempo} BPM · ${bars} BARS · ${lead ? 'LEAD' : 'POLY'}${extraInstruments ? '+XTRA' : ''}${includeRhythm ? '+RHYTHM' : ''}${allowChromatic ? '+CHR' : ''}`
 
   const actions = (compact: boolean) => (
     <>
       <Tooltip label="Queue one batch of 5 candidates matching the brief">
-        <button className="hw-key green" onClick={() => generate(5)}>
+        <Button className="green" onClick={() => generate(5)}>
           + 5
-        </button>
+        </Button>
       </Tooltip>
       <Tooltip label="Queue four batches of 5 — builds toward a big pool to triage">
-        <button className="hw-key dark" onClick={() => generate(20)}>
+        <Button className="dark" onClick={() => generate(20)}>
           + 20
-        </button>
+        </Button>
       </Tooltip>
       <Tooltip label="Free rein: the model picks key, mode, tempo, texture, and instrumentation">
-        <button className="hw-key" onClick={surprise}>
-          <DiceFiveIcon size={13} weight="fill" />
-          {compact ? '' : ' Surprise'}
-        </button>
+        <Button
+          onClick={surprise}
+          leftSection={compact ? undefined : <DiceFiveIcon size={13} weight="fill" />}
+        >
+          {compact ? <DiceFiveIcon size={13} weight="fill" /> : 'Surprise'}
+        </Button>
       </Tooltip>
     </>
   )
@@ -175,27 +190,44 @@ export function GenerationPanel() {
             </div>
           </Tooltip>
           <Tooltip label="BPM stored on each candidate; the transport strip can override during audition">
-            <div>
-              <Knob
-                label="tempo"
-                value={String(tempo)}
-                position={(tempo - 40) / 180}
-                detents={91}
-                onPosition={(p) => setTempo(40 + Math.round((p * 180) / 2) * 2)}
-                variant="light"
-              />
+            <div className="gen-ctl">
+              <div className="gen-tempo-row">
+                <Slider
+                  w={130}
+                  size="sm"
+                  min={40}
+                  max={220}
+                  label={null}
+                  marks={TEMPO_MARKS}
+                  // dragging snaps to the common tempos; the number input is free-form
+                  restrictToMarks
+                  value={Math.max(40, Math.min(220, tempo))}
+                  onChange={setTempo}
+                />
+                <NumberInput
+                  w={64}
+                  size="xs"
+                  min={40}
+                  max={220}
+                  clampBehavior="blur"
+                  value={tempo}
+                  onChange={(v) => {
+                    const n = Number(v)
+                    if (Number.isFinite(n) && n > 0) setTempo(Math.round(n))
+                  }}
+                />
+              </div>
+              <span className="knob-label">tempo</span>
             </div>
           </Tooltip>
           <Tooltip label="Phrase length in bars of 4/4 — candidates must fill it exactly">
-            <div>
-              <Knob
-                label="bars"
+            <div className="gen-ctl">
+              <SegmentedControl
                 value={String(bars)}
-                position={BARS.indexOf(bars) / (BARS.length - 1)}
-                detents={BARS.length}
-                onPosition={(p) => setBars(atPosition(BARS, p))}
-                variant="light"
+                onChange={(v) => setBars(Number(v))}
+                data={BARS.map(String)}
               />
+              <span className="knob-label">bars</span>
             </div>
           </Tooltip>
         </div>
@@ -208,6 +240,9 @@ export function GenerationPanel() {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <Tooltip label="Lead: one clear melodic line with occasional chords (≤4 voices). Off: freely polyphonic (≤6 voices, up to 4 parts)">
                 <HardToggle on={lead} label="lead" onChange={setLead} />
+              </Tooltip>
+              <Tooltip label="Fuller arrangements: 4–6 parts with distinct roles (lead, counter-line, pad, bass, drums) instead of the default 1–4">
+                <HardToggle on={extraInstruments} label="extra" onChange={setExtraInstruments} />
               </Tooltip>
               <Tooltip label="Every candidate includes a drum-kit part (GM percussion) grooving under the melodic material">
                 <HardToggle on={includeRhythm} label="rhythm" onChange={setIncludeRhythm} />

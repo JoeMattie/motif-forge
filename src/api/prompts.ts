@@ -5,13 +5,25 @@ const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 
 
 const SCHEMA_BLOCK = `{"motifs":[{"name":"short evocative name","parts":[{"name":"lead","instrument":"synth","preset":{"oscillator":"sawtooth","envelope":{"attack":0.01,"decay":0.2,"sustain":0.5,"release":0.3}}},{"name":"pad","instrument":"strings"}],"notes":[{"pitch":62,"startBeat":0,"durationBeats":0.5,"velocity":96,"part":0}],"key":"D","mode":"dorian","bars":4,"timeSig":"4/4","rationale":"one sentence on the contour/intent"}]}`
 
-const INSTRUMENT_RULES = `- Instrumentation: each motif declares 1-4 "parts" and each note carries a "part" index. Available instruments: "synth" (a polysynth you can sound-design), "piano" (sampled grand), "epiano" (sampled electric piano), "marimba", "strings" (sustained ensemble — good for pads), "drums" (percussion). Choose instruments that serve the intent; a single part is fine for pure melodies.
+const INSTRUMENT_LIST = `Available instruments: "synth" (a polysynth you can sound-design), "piano" (sampled grand), "epiano" (sampled electric piano), "marimba", "strings" (sustained ensemble — good for pads), "drums" (percussion).`
+
+function instrumentRules(extra: boolean): string {
+  const partsRule = extra
+    ? `- Instrumentation: each motif declares 4-6 "parts" — a FULL arrangement with distinct roles (e.g. lead, counter-line, harmony/pad, bass, drums; no two parts doubling the same role) — and each note carries a "part" index. ${INSTRUMENT_LIST} Vary the instrument palette across the batch.`
+    : `- Instrumentation: each motif declares 1-4 "parts" and each note carries a "part" index. ${INSTRUMENT_LIST} Choose instruments that serve the intent; a single part is fine for pure melodies.`
+  return `${partsRule}
 - Synth presets: parts with instrument "synth" may include a "preset" — oscillator one of "sine" | "triangle" | "sawtooth" | "square", plus an ADSR envelope (attack/decay/release in seconds 0-2, sustain 0-1). Design the patch to fit the part's role: e.g. soft sine pads (slow attack, high sustain), plucky square leads (fast attack, low sustain). Omit the preset for a plain default.
 - Drum parts use General MIDI drum pitches and are exempt from the scale rule: 36 kick, 38 snare, 39 clap, 42 closed hi-hat, 46 open hi-hat, 41-50 toms, 49 crash, 51 ride. Keep grooves supportive, not busy; velocities shape the groove (accents louder, ghost notes soft).`
+}
 
-function textureRule(texture: Texture): string {
-  return texture === 'lead'
-    ? `- Texture: primarily a single melodic line (usually 1-2 parts). Occasional dyads or chords for emphasis are welcome (notes may overlap in time), but never more than 4 simultaneous voices, and the melodic contour must stay clear.`
+function textureRule(texture: Texture, extra: boolean): string {
+  if (texture === 'lead') {
+    return extra
+      ? `- Texture: one clear lead line over a fuller backing arrangement (pads, bass, counter-lines). The melodic contour must stay unmistakable on top; never more than 6 simultaneous voices.`
+      : `- Texture: primarily a single melodic line (usually 1-2 parts). Occasional dyads or chords for emphasis are welcome (notes may overlap in time), but never more than 4 simultaneous voices, and the melodic contour must stay clear.`
+  }
+  return extra
+    ? `- Texture: freely polyphonic across the full arrangement (up to 6 parts). Chords, sustained pads under moving lines, counterpoint, and interlocking rhythms are all welcome. Never more than 8 simultaneous voices.`
     : `- Texture: freely polyphonic (up to 4 parts). Chords, sustained pads under moving lines, and simple counterpoint are all welcome. Never more than 6 simultaneous voices.`
 }
 
@@ -25,13 +37,14 @@ ${SCHEMA_BLOCK}`
 function hardRules(
   brief: Pick<GenerationBrief, 'key' | 'mode' | 'bars' | 'timeSig' | 'allowChromatic'>,
   texture: Texture,
+  extra = false,
 ): string {
   const pcs = scalePitchClasses(brief.key, brief.mode)
   const pcList = pcs.map((pc) => `${pc} (${NOTE_NAMES[pc]})`).join(', ')
   const totalBeats = brief.bars * beatsPerBar(brief.timeSig)
   return `HARD RULES (motifs violating these are discarded by a validator):
-${textureRule(texture)}
-${INSTRUMENT_RULES}
+${textureRule(texture, extra)}
+${instrumentRules(extra)}
 - Exactly ${brief.bars} bars of ${brief.timeSig}: every note must satisfy startBeat + durationBeats <= ${totalBeats}. Fill the phrase — the last note should end at or near beat ${totalBeats}.
 - Pitches are MIDI numbers, integers 36-96. Prefer the melodic register 48-84 (bass voices in polyphony may sit lower).
 - ${brief.allowChromatic ? `Mostly use` : `Use ONLY`} pitch classes from ${brief.key} ${brief.mode}: {${pcList}}. A MIDI pitch p is in scale when (p mod 12) is in that set.${brief.allowChromatic ? ' Occasional chromatic passing tones are allowed when expressive.' : ''}
@@ -41,8 +54,8 @@ ${SHARED_TAIL_RULES}`
 /** Rules for surprise mode: per-motif key/mode/bars/tempo instead of fixed constraints. */
 function surpriseHardRules(): string {
   return `HARD RULES (motifs violating these are discarded by a validator):
-${textureRule('poly')}
-${INSTRUMENT_RULES}
+${textureRule('poly', false)}
+${instrumentRules(false)}
 - Each motif declares its own "bars" (2, 4, or 8) and "timeSig" "4/4", plus a "tempo" field (40-220). Every note must satisfy startBeat + durationBeats <= bars × 4, and the phrase should fill its length.
 - Pitches are MIDI numbers, integers 36-96. Prefer the melodic register 48-84 (bass voices in polyphony may sit lower).
 - Stay mostly within each motif's OWN declared key/mode; chromaticism is welcome when expressive.
@@ -62,7 +75,7 @@ CONSTRAINT BRIEF:
 
 Make the ${n} candidates meaningfully different from each other: different contours (arch, descent, zigzag, pedal-tone...), different rhythmic characters, different registers within 48-84.
 
-${hardRules(brief, brief.texture)}`
+${hardRules(brief, brief.texture, brief.extraInstruments)}`
 }
 
 /** Free-rein generation: the model picks key, mode, tempo, texture, and instrumentation. */
@@ -74,8 +87,12 @@ For EACH motif, choose your own: key and mode (any of ${MODES.join(', ')}), temp
 ${surpriseHardRules()}`
 }
 
-export const SURPRISE_MUTATION_BRIEF =
-  'Reinterpret this motif in ways that would surprise its author: consider changing the texture, instrumentation, rhythm, register, harmony, or mood — but keep a recognizable kernel of the parent (its contour, a signature interval, or its rhythmic hook). Make each child take a genuinely different angle.'
+/** Built-in brief for the bay's one-click per-part MUTATE key. */
+export function partMutationBrief(partName: string, isDrums: boolean): string {
+  return isDrums
+    ? `Write alternative grooves for the "${partName}" part only: keep it supportive of the melodic material, and vary the feel across takes — accents, syncopation, hat density, ghost notes. Each take should be a genuinely different groove idea.`
+    : `Write alternative takes on the "${partName}" part only: keep its role and register, vary its contour and rhythm, and make it sit well against the other parts. Each take should be a genuinely different idea while staying recognizably related to the parent.`
+}
 
 export interface MutationOptions {
   lockRhythm?: boolean

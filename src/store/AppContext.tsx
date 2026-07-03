@@ -1,12 +1,15 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useReducer,
+  useState,
   type Dispatch,
   type ReactNode,
 } from 'react'
+import { Button, Center, Stack, Text } from '@mantine/core'
 import { initialState, reducer, type Action, type AppState } from './appState'
 import type { PersistenceAdapter } from './persistence'
 
@@ -38,6 +41,12 @@ export function AppProvider({
           break
         case 'CONCEPT_DELETED':
           persist(adapter.deleteConcept(action.id))
+          break
+        case 'PART_VARIATIONS_UPSERT':
+          persist(adapter.putPartVariations(action.variations))
+          break
+        case 'PART_VARIATIONS_DELETED':
+          persist(adapter.deletePartVariations(action.ids))
           break
         default:
           break
@@ -77,23 +86,55 @@ export function AppProvider({
     }
   }, [state.motifs, adapter])
 
-  // Hydrate once on mount.
+  // Hydrate once on mount (and again on RETRY). A blocked/corrupt IndexedDB
+  // can stall without ever erroring, so the whole load races a timeout and
+  // failure lands on a recovery screen instead of an eternal spinner.
+  const [hydrationError, setHydrationError] = useState<string | null>(null)
+  const [hydrationAttempt, setHydrationAttempt] = useState(0)
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        await adapter.init()
-        const { motifs, concepts } = await adapter.loadAll()
-        if (!cancelled) rawDispatch({ type: 'HYDRATED', motifs, concepts })
+        await withTimeout(adapter.init(), 'opening the library database')
+        const { motifs, concepts, partVariations } = await withTimeout(
+          adapter.loadAll(),
+          'reading the library',
+        )
+        if (!cancelled) rawDispatch({ type: 'HYDRATED', motifs, concepts, partVariations })
       } catch (e) {
         console.error('hydration failed', e)
-        if (!cancelled) rawDispatch({ type: 'HYDRATED', motifs: [], concepts: [] })
+        if (!cancelled) setHydrationError(e instanceof Error ? e.message : String(e))
       }
     })()
     return () => {
       cancelled = true
     }
+  }, [adapter, hydrationAttempt])
+
+  const clearDatabase = useCallback(async () => {
+    try {
+      await withTimeout(adapter.destroy(), 'clearing the database')
+      location.reload()
+    } catch (e) {
+      setHydrationError(e instanceof Error ? e.message : String(e))
+    }
   }, [adapter])
+
+  if (hydrationError && !state.hydrated) {
+    return (
+      <HydrationRecovery
+        message={hydrationError}
+        onRetry={() => {
+          setHydrationError(null)
+          setHydrationAttempt((n) => n + 1)
+        }}
+        onContinue={() =>
+          rawDispatch({ type: 'HYDRATED', motifs: [], concepts: [], partVariations: [] })
+        }
+        onClear={clearDatabase}
+      />
+    )
+  }
 
   return (
     <StateContext.Provider value={state}>
@@ -101,6 +142,71 @@ export function AppProvider({
         {children}
       </DispatchContext.Provider>
     </StateContext.Provider>
+  )
+}
+
+const HYDRATION_TIMEOUT_MS = 5000
+
+function withTimeout<T>(p: Promise<T>, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Timed out ${what}. The database may be locked by another tab.`)),
+      HYDRATION_TIMEOUT_MS,
+    )
+    p.then(
+      (v) => {
+        clearTimeout(timer)
+        resolve(v)
+      },
+      (e) => {
+        clearTimeout(timer)
+        reject(e)
+      },
+    )
+  })
+}
+
+function HydrationRecovery({
+  message,
+  onRetry,
+  onContinue,
+  onClear,
+}: {
+  message: string
+  onRetry: () => void
+  onContinue: () => void
+  onClear: () => void
+}) {
+  return (
+    <Center h="100vh">
+      <Stack gap="sm" maw={440} align="center" ta="center">
+        <Text fw={700}>LIBRARY FAILED TO LOAD</Text>
+        <Text c="dimmed" size="sm">
+          {message}
+        </Text>
+        <Text c="dimmed" size="sm">
+          If Motif Forge is open in another tab or window, close it first, then retry.
+        </Text>
+        <Button onClick={onRetry}>RETRY</Button>
+        <Button variant="default" onClick={onContinue}>
+          CONTINUE WITHOUT SAVING
+        </Button>
+        <Button
+          color="red"
+          variant="outline"
+          onClick={() => {
+            if (
+              window.confirm(
+                'Delete the entire library database? All motifs, ratings, and concepts will be lost.',
+              )
+            )
+              onClear()
+          }}
+        >
+          CLEAR DATABASE
+        </Button>
+      </Stack>
+    </Center>
   )
 }
 

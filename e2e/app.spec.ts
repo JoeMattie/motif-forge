@@ -43,7 +43,7 @@ test('view pills move between triage, library, and concepts', async ({ page }) =
 test('theme toggle swaps the Day/Nite panel tokens', async ({ page }) => {
   await gotoApp(page)
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'day')
-  await page.locator('.wb-header').getByRole('button', { name: /^nite$/i }).click()
+  await page.locator('.wb-header .wb-seg-label:has([aria-label="Nite theme"])').click()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'nite')
   await page.reload()
   await page.locator('.motif-card').first().waitFor()
@@ -52,11 +52,11 @@ test('theme toggle swaps the Day/Nite panel tokens', async ({ page }) => {
 
 test('GRID/FOCUS switch enters focus triage with the large LCD', async ({ page }) => {
   await gotoApp(page)
-  await page.locator('.wb-header').getByRole('button', { name: /^focus$/i }).click()
+  await page.locator('.wb-header .wb-seg-label', { hasText: 'focus' }).click()
   await expect(page.locator('.focus-lcd')).toBeVisible()
   // Ember is auto-selected on load, so the deck opens on it
   await expect(page.locator('.focus-lcd-title')).toHaveText('Ember (stepwise)')
   await expect(page.locator('.queue-card.current')).toHaveCount(1)
-  await page.locator('.wb-header').getByRole('button', { name: /^grid$/i }).click()
+  await page.locator('.wb-header .wb-seg-label', { hasText: 'grid' }).click()
   await expect(page.locator('.motif-grid')).toBeVisible()
 })

@@ -1,4 +1,5 @@
-import { Tooltip } from '@mantine/core'
+import { Button, SegmentedControl, Tooltip } from '@mantine/core'
+import { MonitorIcon, MoonIcon, SunIcon } from '@phosphor-icons/react'
 import { engine } from '../audio/engine'
 import { useAppDispatch, useAppState } from '../store/AppContext'
 import type { TriageMode, View } from '../store/appState'
@@ -17,10 +18,10 @@ const SUB_LABELS: Record<View, string> = {
   concepts: 'LEITMOTIF DESK · MF–01',
 }
 
-const THEME_LABELS: { value: ThemePref; label: string }[] = [
-  { value: 'day', label: 'Day' },
-  { value: 'nite', label: 'Nite' },
-  { value: 'system', label: 'Sys' },
+const THEME_OPTIONS: { value: ThemePref; label: string; icon: typeof SunIcon }[] = [
+  { value: 'day', label: 'Day theme', icon: SunIcon },
+  { value: 'nite', label: 'Nite theme', icon: MoonIcon },
+  { value: 'system', label: 'Follow system theme', icon: MonitorIcon },
 ]
 
 export function Header() {
@@ -46,11 +47,23 @@ export function Header() {
         </Tooltip>
       )}
 
+      {state.view === 'triage' && !bayOpen && (
+        <>
+          <Tooltip label="Grid scans the whole pool; Focus triages one motif at a time with auto-advance">
+            <SegmentedControl
+              value={state.triageMode}
+              onChange={(m) => dispatch({ type: 'SET_TRIAGE_MODE', mode: m as TriageMode })}
+              data={['grid', 'focus']}
+            />
+          </Tooltip>
+          <span className="header-divider" />
+        </>
+      )}
+
       <div className="view-pills">
         {VIEWS.map((v) => (
-          <button
+          <Button
             key={v.value}
-            className="hw-key"
             data-latched={state.view === v.value && !bayOpen}
             onClick={() => {
               engine.stop()
@@ -58,49 +71,21 @@ export function Header() {
             }}
           >
             {v.label}
-          </button>
+          </Button>
         ))}
-        {bayOpen && (
-          <button className="hw-key" data-latched={true}>
-            Mutate
-          </button>
-        )}
+        {bayOpen && <Button data-latched={true}>Mutate</Button>}
       </div>
-
-      {state.view === 'triage' && !bayOpen && (
-        <>
-          <span className="header-divider" />
-          <Tooltip label="Grid scans the whole pool; Focus triages one motif at a time with auto-advance">
-            <div className="seg">
-              {(['grid', 'focus'] as TriageMode[]).map((m) => (
-                <button
-                  key={m}
-                  className="seg-item"
-                  data-latched={state.triageMode === m}
-                  onClick={() => dispatch({ type: 'SET_TRIAGE_MODE', mode: m })}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-          </Tooltip>
-        </>
-      )}
 
       <span className="header-divider" />
       <Tooltip label="Panel theme: Day (light hardware), Nite (after hours), or follow the OS">
-        <div className="seg">
-          {THEME_LABELS.map((t) => (
-            <button
-              key={t.value}
-              className="seg-item"
-              data-latched={themePref === t.value}
-              onClick={() => setThemePref(t.value)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          value={themePref}
+          onChange={(v) => setThemePref(v as ThemePref)}
+          data={THEME_OPTIONS.map((t) => ({
+            value: t.value,
+            label: <t.icon aria-label={t.label} size={13} weight={themePref === t.value ? 'fill' : 'regular'} />,
+          }))}
+        />
       </Tooltip>
       <Tooltip label="Explanatory hover tooltips like this one, everywhere in the app">
         <HardToggle on={tooltipsEnabled} label="hints" onChange={setTooltipsEnabled} />

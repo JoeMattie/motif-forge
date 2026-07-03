@@ -6,7 +6,7 @@ test('the focus-mode .MID key downloads a well-formed format-0 SMF', async ({ pa
   await gotoApp(page)
 
   // Ember is auto-selected; focus mode exports the current deck motif.
-  await page.locator('.wb-header').getByRole('button', { name: /^focus$/i }).click()
+  await page.locator('.wb-header .wb-seg-label', { hasText: 'focus' }).click()
   await expect(page.locator('.focus-lcd-title')).toHaveText('Ember (stepwise)')
 
   const downloadPromise = page.waitForEvent('download')

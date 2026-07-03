@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Menu, Select, TextInput, Tooltip } from '@mantine/core'
+import { Button, Menu, Select, TextInput, Tooltip } from '@mantine/core'
 import { CaretDownIcon, PlusIcon, StarIcon } from '@phosphor-icons/react'
 import type { Family } from '../core/families'
 import { buildFamilies } from '../core/families'
@@ -197,13 +197,18 @@ export function LibraryView() {
           onChange={(e) => setNewConcept(e.currentTarget.value)}
           onKeyDown={(e) => e.key === 'Enter' && createConcept()}
         />
-        <button className="hw-key dark" disabled={!newConcept.trim()} onClick={createConcept}>
-          <PlusIcon size={10} weight="bold" /> Concept
-        </button>
+        <Button
+          className="dark"
+          disabled={!newConcept.trim()}
+          onClick={createConcept}
+          leftSection={<PlusIcon size={10} weight="bold" />}
+        >
+          Concept
+        </Button>
         <Tooltip label="Download the promoted take of every family shown as .mid files">
-          <button className="hw-key accent" disabled={kept.length === 0} onClick={exportAllMidi}>
+          <Button className="accent" disabled={kept.length === 0} onClick={exportAllMidi}>
             Export all .MID
-          </button>
+          </Button>
         </Tooltip>
       </div>
       {kept.length === 0 ? (
