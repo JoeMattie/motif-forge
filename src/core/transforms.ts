@@ -54,9 +54,19 @@ function retrograde(notes: Note[], totalBeats: number): Note[] {
   )
 }
 
-export function applyTransform(parent: Motif, t: Transform): Motif {
+export interface TransformOptions {
+  /** Only notes of these part indices are transformed; the rest pass through
+   * verbatim (mutation-bay LOCK). Omitted = transform every part. */
+  parts?: Set<number>
+}
+
+export function applyTransform(parent: Motif, t: Transform, opts: TransformOptions = {}): Motif {
   const total = parent.bars * beatsPerBar(parent.timeSig)
-  let notes = parent.notes.map((n) => ({ ...n }))
+  const inScope = (n: Note) => opts.parts === undefined || opts.parts.has(n.part ?? 0)
+  // Transform only the in-scope notes, then merge the untouched ones back.
+  const scoped = parent.notes.filter(inScope).map((n) => ({ ...n }))
+  const passthrough = parent.notes.filter((n) => !inScope(n)).map((n) => ({ ...n }))
+  let notes = scoped
   let bars = parent.bars
   let mode = parent.mode
 
@@ -97,15 +107,17 @@ export function applyTransform(parent: Motif, t: Transform): Motif {
       mode = t.targetMode
       break
     case 'octaveDisplace': {
+      // Indices refer to the FULL note list, so displace before scoping applies.
       const set = new Set(t.noteIndices)
-      notes = notes.map((n, i) =>
-        set.has(i) ? { ...n, pitch: clampPitch(n.pitch + 12 * t.direction) } : n,
+      notes = parent.notes.map((n, i) =>
+        set.has(i) ? { ...n, pitch: clampPitch(n.pitch + 12 * t.direction) } : { ...n },
       )
+      passthrough.length = 0
       break
     }
   }
 
-  notes = sortNotes(notes)
+  notes = sortNotes([...notes, ...passthrough])
   const scaleWarning = notes.some((n) => !isInScale(n.pitch, parent.key, mode))
 
   return {

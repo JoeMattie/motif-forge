@@ -1,79 +1,81 @@
 import { createTheme, type MantineColorsTuple } from '@mantine/core'
 
-/** Accent teal — index 5 is the bright accent, index 8 the dim variant used for fills. */
+/** Workbench accent orange — index 6 ≈ #f14d0e (primary), index 8 ≈ pressed shadow. */
 const forge: MantineColorsTuple = [
-  '#e8faf4',
-  '#d0f2e7',
-  '#a5e6d1',
-  '#79d9ba',
-  '#5ecfab',
-  '#4fc1a6',
-  '#41a78f',
-  '#338a76',
-  '#2c6e60',
-  '#1f5245',
-]
-
-/** Grays mapped to the studio palette: 0 = text, 3 = dim text, 5 = borders, 6 = raised, 7 = page. */
-const dark: MantineColorsTuple = [
-  '#c9cdd6',
-  '#aab0bc',
-  '#8b92a0',
-  '#6f7683',
-  '#3a4150',
-  '#262a33',
-  '#191c23',
-  '#111318',
-  '#0e1014',
-  '#0c0e12',
+  '#fff0e8',
+  '#ffddca',
+  '#ffbf9c',
+  '#fc9c68',
+  '#f77a3a',
+  '#f45f1c',
+  '#f14d0e',
+  '#d84105',
+  '#b93400',
+  '#8f2800',
 ]
 
 // The app sets :root font-size to 13px, so Mantine's rem-based component
 // dimensions shrink to ~81% — deliberately compact. Font sizes are pinned in
-// px so text stays at the studio's 13px baseline instead of shrinking too.
+// px so text stays at the workbench's 13px baseline instead of shrinking too.
+// All colors reference the semantic CSS custom properties defined in
+// styles.css on :root[data-theme='day' | 'nite'] — Mantine chrome follows the
+// hardware panel automatically when the theme flips.
 export const theme = createTheme({
-  fontFamily: "'SF Mono', ui-monospace, 'Cascadia Code', Menlo, monospace",
-  fontFamilyMonospace: "'SF Mono', ui-monospace, 'Cascadia Code', Menlo, monospace",
+  fontFamily: "'Space Grotesk', system-ui, sans-serif",
+  fontFamilyMonospace: "'IBM Plex Mono', ui-monospace, monospace",
   fontSizes: { xs: '11px', sm: '13px', md: '13px', lg: '15px', xl: '17px' },
-  defaultRadius: 'sm',
+  defaultRadius: 'md',
   cursorType: 'pointer',
   primaryColor: 'forge',
-  primaryShade: { light: 6, dark: 8 },
-  colors: { forge, dark },
+  primaryShade: { light: 6, dark: 6 },
+  colors: { forge },
   components: {
-    Button: {
-      defaultProps: { variant: 'default', size: 'compact-md' },
-    },
     TextInput: { defaultProps: { size: 'sm' } },
     Textarea: { defaultProps: { size: 'sm' } },
     NumberInput: { defaultProps: { size: 'sm' } },
     Select: {
       defaultProps: { size: 'sm', allowDeselect: false, comboboxProps: { withinPortal: true } },
     },
-    Checkbox: {
-      defaultProps: { size: 'sm' },
-      styles: { label: { color: 'var(--text-dim)' } },
-    },
-    Chip: { defaultProps: { size: 'xs' } },
-    Fieldset: {
-      styles: {
-        root: { padding: '0.3rem 0.6rem 0.45rem', backgroundColor: 'transparent' },
-        legend: { color: 'var(--text-dim)', padding: '0 0.3rem' },
-      },
-    },
-    Slider: { defaultProps: { size: 'sm' } },
-    Badge: { defaultProps: { variant: 'outline', size: 'sm' } },
     Tooltip: {
       defaultProps: { withArrow: true, openDelay: 300, multiline: true, maw: 340 },
+      styles: {
+        tooltip: {
+          backgroundColor: 'var(--ink)',
+          color: 'var(--module-bg)',
+          fontSize: '11px',
+        },
+      },
     },
     Input: {
       styles: {
-        input: { backgroundColor: 'var(--bg)' },
+        input: {
+          backgroundColor: 'var(--surface)',
+          borderColor: 'var(--surface-border)',
+          color: 'var(--ink)',
+          boxShadow: 'inset 0 1px 3px rgba(0,0,0,.06)',
+          fontFamily: "'Space Grotesk', system-ui, sans-serif",
+        },
       },
     },
     InputWrapper: {
       styles: {
-        label: { color: 'var(--text-dim)', fontWeight: 400, marginBottom: '0.25rem' },
+        label: {
+          color: 'var(--label)',
+          fontWeight: 600,
+          fontSize: '9.5px',
+          letterSpacing: '.12em',
+          textTransform: 'uppercase',
+          marginBottom: '0.3rem',
+        },
+      },
+    },
+    Popover: {
+      styles: {
+        dropdown: {
+          backgroundColor: 'var(--surface)',
+          borderColor: 'var(--surface-border)',
+          color: 'var(--ink)',
+        },
       },
     },
   },

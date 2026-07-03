@@ -12,19 +12,23 @@ import type { Instrument } from './instruments'
 /**
  * Schedule every note of the motif from t0, routing each note to its part's
  * instrument (instruments[note.part], clamped). Returns the end time in seconds.
+ * fromBeat starts playback mid-motif (notes that already began are skipped) —
+ * used by the A/B audition's swap-on-bar.
  */
 export function scheduleMotif(
   instruments: Instrument[],
   motif: Motif,
   tempo: number,
   t0: number,
+  fromBeat = 0,
 ): number {
   const spb = 60 / tempo
   for (const n of motif.notes) {
+    if (n.startBeat < fromBeat - 1e-6) continue
     const inst = instruments[Math.min(n.part ?? 0, instruments.length - 1)]
-    inst.noteOn(n.pitch, n.velocity, t0 + n.startBeat * spb, n.durationBeats * spb)
+    inst.noteOn(n.pitch, n.velocity, t0 + (n.startBeat - fromBeat) * spb, n.durationBeats * spb)
   }
-  return t0 + motif.bars * beatsPerBar(motif.timeSig) * spb
+  return t0 + (motif.bars * beatsPerBar(motif.timeSig) - fromBeat) * spb
 }
 
 export function scheduleMetronome(

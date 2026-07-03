@@ -79,6 +79,8 @@ export const SURPRISE_MUTATION_BRIEF =
 
 export interface MutationOptions {
   lockRhythm?: boolean
+  /** Part indices the LLM must copy into every child verbatim (mutation-bay LOCK). */
+  lockedParts?: number[]
 }
 
 export function buildMutationPrompt(
@@ -96,13 +98,21 @@ export function buildMutationPrompt(
     bars: parent.bars,
     timeSig: parent.timeSig,
   })
+  const locked = (opts.lockedParts ?? []).filter((i) => i >= 0 && i < parent.parts.length)
+  const armed = parent.parts.map((_, i) => i).filter((i) => !locked.includes(i))
+  const partName = (i: number) => `"${parent.parts[i]?.name ?? `part ${i}`}" (part ${i})`
+  const partLock =
+    locked.length > 0 && parent.parts.length > 0
+      ? `
+PART LOCK (a validator rejects children that break it): the following parts are LOCKED — copy their notes into every child VERBATIM: identical pitch, startBeat, durationBeats, velocity, and part index, with no notes added or removed: ${locked.map(partName).join(', ')}. Keep the parent's "parts" array exactly as given. Only rewrite the notes of the armed parts: ${armed.map(partName).join(', ')}. The children differ from the parent ONLY in the armed parts.`
+      : ''
   return `You are a composer creating variations of an existing motif. Here is the parent motif:
 
 ${parentJson}
 
 MUTATION BRIEF from the author: ${mutationBrief}
 
-Compose ${n} children that follow the mutation brief while remaining recognizably related to the parent. Keep the same key (${parent.key} ${parent.mode}), bars (${parent.bars}) and time signature (${parent.timeSig}) unless the brief explicitly says otherwise. Match the parent's texture and instrumentation (parts) unless the brief asks for a change. Give each child a name derived from the parent's ("${parent.name}").
+Compose ${n} children that follow the mutation brief while remaining recognizably related to the parent. Keep the same key (${parent.key} ${parent.mode}), bars (${parent.bars}) and time signature (${parent.timeSig}) unless the brief explicitly says otherwise. Match the parent's texture and instrumentation (parts) unless the brief asks for a change. Give each child a name derived from the parent's ("${parent.name}").${partLock}
 ${
   opts.lockRhythm
     ? `

@@ -1,6 +1,9 @@
 import type { Concept, Motif, Rating, Sound } from '../types'
+import { rootIdOf } from '../core/families'
 
 export type View = 'triage' | 'library' | 'concepts'
+
+export type TriageMode = 'grid' | 'focus'
 
 export interface TransportState {
   tempoMode: 'motif' | number // follow the motif's tempo, or a fixed BPM
@@ -26,8 +29,10 @@ export interface AppState {
   motifs: Map<string, Motif>
   concepts: Map<string, Concept>
   selectedId: string | null
-  mutationTargetId: string | null // motif open in the mutation panel
+  mutationTargetId: string | null // face motif whose family is open in the mutation bay
   view: View
+  triageMode: TriageMode
+  expandedFamilyId: string | null // family (root id) folded out in the triage grid
   transport: TransportState
   generation: GenerationStatus
   pending: PendingBatch[]
@@ -41,6 +46,8 @@ export const initialState: AppState = {
   selectedId: null,
   mutationTargetId: null,
   view: 'triage',
+  triageMode: 'grid',
+  expandedFamilyId: null,
   transport: {
     tempoMode: 'motif',
     metronome: false,
@@ -60,6 +67,13 @@ export type Action =
   | { type: 'MOTIF_DISCARDED'; id: string }
   | { type: 'MOTIF_RESTORED'; id: string }
   | { type: 'MOTIF_ASSIGNED_CONCEPT'; id: string; conceptId: string | null }
+  /** Promote one family member as the face. familyIds = every member (computed by the caller);
+   *  the flag is cleared on all of them, then set on `id`. */
+  | { type: 'MOTIF_PROMOTED'; id: string; familyIds: string[] }
+  | { type: 'MOTIF_ASSIGNED_TRACK'; id: string; trackId: string | null }
+  | { type: 'FAMILY_ASSIGNED_CONCEPT'; familyIds: string[]; conceptId: string | null }
+  | { type: 'SET_TRIAGE_MODE'; mode: TriageMode }
+  | { type: 'SET_EXPANDED_FAMILY'; id: string | null }
   | { type: 'CONCEPT_CREATED'; concept: Concept }
   | { type: 'CONCEPT_DELETED'; id: string }
   | { type: 'SELECT'; id: string | null }
@@ -106,6 +120,28 @@ export function reducer(state: AppState, action: Action): AppState {
       }
     case 'MOTIF_ASSIGNED_CONCEPT':
       return withMotif(state, action.id, { conceptId: action.conceptId })
+    case 'MOTIF_PROMOTED': {
+      const motifs = new Map(state.motifs)
+      for (const fid of action.familyIds) {
+        const m = motifs.get(fid)
+        if (m) motifs.set(fid, { ...m, promoted: fid === action.id })
+      }
+      return { ...state, motifs }
+    }
+    case 'MOTIF_ASSIGNED_TRACK':
+      return withMotif(state, action.id, { trackId: action.trackId })
+    case 'FAMILY_ASSIGNED_CONCEPT': {
+      const motifs = new Map(state.motifs)
+      for (const fid of action.familyIds) {
+        const m = motifs.get(fid)
+        if (m) motifs.set(fid, { ...m, conceptId: action.conceptId })
+      }
+      return { ...state, motifs }
+    }
+    case 'SET_TRIAGE_MODE':
+      return { ...state, triageMode: action.mode }
+    case 'SET_EXPANDED_FAMILY':
+      return { ...state, expandedFamilyId: action.id }
     case 'CONCEPT_CREATED': {
       const concepts = new Map(state.concepts)
       concepts.set(action.concept.id, action.concept)
@@ -116,8 +152,18 @@ export function reducer(state: AppState, action: Action): AppState {
       concepts.delete(action.id)
       return { ...state, concepts }
     }
-    case 'SELECT':
-      return { ...state, selectedId: action.id }
+    case 'SELECT': {
+      // Moving the selection to a different family folds the open tray back in
+      // (selecting variants inside the open tray keeps it out).
+      let expandedFamilyId = state.expandedFamilyId
+      if (expandedFamilyId !== null && action.id !== null) {
+        const selected = state.motifs.get(action.id)
+        if (selected && rootIdOf(selected, state.motifs) !== expandedFamilyId) {
+          expandedFamilyId = null
+        }
+      }
+      return { ...state, selectedId: action.id, expandedFamilyId }
+    }
     case 'SET_MUTATION_TARGET':
       return { ...state, mutationTargetId: action.id }
     case 'SET_VIEW':

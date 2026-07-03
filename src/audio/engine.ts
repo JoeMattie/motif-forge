@@ -15,6 +15,8 @@ export interface PlayOptions {
   drone: boolean
   sound: Sound // used for motifs without parts
   forceSound: boolean // ignore parts and play everything through `sound`
+  loop?: boolean // restart from beat 0 when the motif ends (A/B audition)
+  fromBeat?: number // start playback mid-motif (swap-on-bar)
 }
 
 interface EngineSnapshot {
@@ -46,6 +48,7 @@ class AudioEngine {
   private active: ActiveInstrument[] = []
   private playGain: GainNode | null = null
   private startTime = 0
+  private startBeat = 0
   private secondsPerBeat = 0.5
   private totalBeats = 0
   private endTimer: number | null = null
@@ -108,8 +111,10 @@ class AudioEngine {
     void Promise.all(active.map((a) => a.inst.ready)).then(() => {
       if (token !== this.playToken) return // superseded by another play/stop
 
+      const fromBeat = Math.max(0, Math.min(opts.fromBeat ?? 0, this.totalBeats))
       const t0 = ctx.currentTime + 0.08
       this.startTime = t0
+      this.startBeat = fromBeat
       // Un-mute cached instruments right before their first note; anything
       // still decaying from a previous stop stays silent until then.
       for (const a of active) {
@@ -123,15 +128,19 @@ class AudioEngine {
         motif,
         opts.tempo,
         t0,
+        fromBeat,
       )
-      if (opts.metronome) scheduleMetronome(ctx, playGain, this.totalBeats, bpb, opts.tempo, t0)
+      if (opts.metronome)
+        scheduleMetronome(ctx, playGain, this.totalBeats - fromBeat, bpb, opts.tempo, t0)
       if (opts.drone) scheduleDrone(ctx, playGain, motif.key, endTime - t0, t0)
 
       this.endTimer = window.setTimeout(
         () => {
-          if (this.snapshot.playingMotifId === motif.id) this.stop()
+          if (this.snapshot.playingMotifId !== motif.id) return
+          if (opts.loop) this.play(motif, { ...opts, fromBeat: 0 })
+          else this.stop()
         },
-        (endTime - ctx.currentTime + 0.5) * 1000,
+        (endTime - ctx.currentTime + (opts.loop ? 0 : 0.5)) * 1000,
       )
 
       this.snapshot = { playingMotifId: motif.id, loading: false }
@@ -182,7 +191,7 @@ class AudioEngine {
   /** Current position in beats of the playing motif, or null. */
   getPositionBeats(): number | null {
     if (!this.ctx || this.snapshot.playingMotifId === null || this.snapshot.loading) return null
-    const beats = (this.ctx.currentTime - this.startTime) / this.secondsPerBeat
+    const beats = this.startBeat + (this.ctx.currentTime - this.startTime) / this.secondsPerBeat
     return Math.max(0, Math.min(beats, this.totalBeats))
   }
 

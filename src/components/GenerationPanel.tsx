@@ -1,32 +1,35 @@
 import { useState } from 'react'
-import {
-  Button,
-  Checkbox,
-  Chip,
-  Collapse,
-  Fieldset,
-  Group,
-  NumberInput,
-  Select,
-  Stack,
-  Textarea,
-  TextInput,
-  Tooltip,
-} from '@mantine/core'
-import type { GenerationBrief, Mode, Texture } from '../types'
+import { Textarea, TextInput, Tooltip } from '@mantine/core'
+import { CaretDownIcon, CaretRightIcon, DiceFiveIcon } from '@phosphor-icons/react'
+import type { GenerationBrief, Mode } from '../types'
 import { MODES } from '../core/theory'
 import { generateBatch, generateSurpriseBatch } from '../api/generate'
 import { enqueue } from '../api/queue'
 import type { ValidationResult } from '../core/validate'
 import { useAppDispatch, useAppState } from '../store/AppContext'
 import { newId } from '../core/ids'
+import { Knob } from './hw/Knob'
+import { HardToggle } from './hw/HardToggle'
 
 const KEYS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
+const BARS = [2, 4, 8]
+const MODE_SHORT: Record<Mode, string> = {
+  ionian: 'ION',
+  dorian: 'DOR',
+  phrygian: 'PHR',
+  lydian: 'LYD',
+  mixolydian: 'MIX',
+  aeolian: 'AEO',
+  locrian: 'LOC',
+}
+
+const atPosition = <T,>(list: readonly T[], position: number): T =>
+  list[Math.max(0, Math.min(list.length - 1, Math.round(position * (list.length - 1))))]
 
 export function GenerationPanel() {
   const { concepts } = useAppState()
   const dispatch = useAppDispatch()
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const [key, setKey] = useState('D')
   const [mode, setMode] = useState<Mode>('dorian')
   const [tempo, setTempo] = useState(100)
@@ -34,7 +37,7 @@ export function GenerationPanel() {
   const [concept, setConcept] = useState('')
   const [text, setText] = useState('')
   const [allowChromatic, setAllowChromatic] = useState(false)
-  const [texture, setTexture] = useState<Texture>('lead')
+  const [lead, setLead] = useState(true) // on = 'lead' texture, off = free poly
   const [includeRhythm, setIncludeRhythm] = useState(false)
 
   /** Reuse or create the named concept; returns its id (or null when unnamed). */
@@ -55,9 +58,7 @@ export function GenerationPanel() {
     dispatch({ type: 'BATCH_QUEUED', batch: { id: batchId, count, label } })
     void enqueue(run)
       .then((result) => {
-        const motifs = conceptId
-          ? result.valid.map((m) => ({ ...m, conceptId }))
-          : result.valid
+        const motifs = conceptId ? result.valid.map((m) => ({ ...m, conceptId })) : result.valid
         dispatch({ type: 'MOTIFS_ADDED', motifs })
         dispatch({
           type: 'GENERATION_FINISHED',
@@ -80,7 +81,7 @@ export function GenerationPanel() {
       concept,
       text,
       allowChromatic,
-      texture,
+      texture: lead ? 'lead' : 'poly',
       includeRhythm,
     }
     const label = concept.trim() || `${key} ${mode}`
@@ -97,112 +98,143 @@ export function GenerationPanel() {
     queueBatch(5, 'surprise', () => generateSurpriseBatch(5))
   }
 
+  const summary = `${key} ${mode} · ${tempo} BPM · ${bars} BARS · ${lead ? 'LEAD' : 'POLY'}${includeRhythm ? '+RHYTHM' : ''}${allowChromatic ? '+CHR' : ''}`
+
+  const actions = (compact: boolean) => (
+    <>
+      <Tooltip label="Queue one batch of 5 candidates matching the brief">
+        <button className="hw-key green" onClick={() => generate(5)}>
+          + 5
+        </button>
+      </Tooltip>
+      <Tooltip label="Queue four batches of 5 — builds toward a big pool to triage">
+        <button className="hw-key dark" onClick={() => generate(20)}>
+          + 20
+        </button>
+      </Tooltip>
+      <Tooltip label="Free rein: the model picks key, mode, tempo, texture, and instrumentation">
+        <button className="hw-key" onClick={surprise}>
+          <DiceFiveIcon size={13} weight="fill" />
+          {compact ? '' : ' Surprise'}
+        </button>
+      </Tooltip>
+    </>
+  )
+
+  if (!open) {
+    return (
+      <section className="module gen-strip">
+        <button className="gen-title" onClick={() => setOpen(true)}>
+          Generate <CaretRightIcon size={10} weight="bold" />
+        </button>
+        <span className="gen-summary">
+          {summary}
+          {concept.trim() && (
+            <>
+              {' · '}
+              <b>{concept.trim()}</b>
+            </>
+          )}
+        </span>
+        {text.trim() && <span className="gen-brief-preview">“{text.trim()}”</span>}
+        <span className="spacer" />
+        {actions(true)}
+      </section>
+    )
+  }
+
   return (
-    <section className="gen-panel">
-      <div className="panel-head" onClick={() => setOpen(!open)}>
-        <span>Generate</span>
-        <span className="chevron">{open ? '▾' : '▸'}</span>
+    <section className="module">
+      <div className="gen-strip" style={{ paddingBottom: 0 }}>
+        <button className="gen-title" onClick={() => setOpen(false)}>
+          Generate <CaretDownIcon size={10} weight="bold" />
+        </button>
       </div>
-      <Collapse expanded={open}>
-        <Stack gap="0.6rem" px="0.8rem" pb="0.8rem">
-          <Group gap="0.75rem" align="flex-end">
-            <Tooltip label="Tonal center all candidates are written in">
-              <Select label="key" w={72} value={key} onChange={(v) => v && setKey(v)} data={KEYS} />
-            </Tooltip>
-            <Tooltip label="Scale flavor: ionian = major, aeolian = natural minor; dorian/mixolydian sit between, phrygian/locrian are darker, lydian brighter">
-              <Select
-                label="mode"
-                w={120}
-                value={mode}
-                onChange={(v) => v && setMode(v as Mode)}
-                data={MODES}
+      <div className="gen-module">
+        <div className="gen-knobs">
+          <Tooltip label="Tonal center all candidates are written in">
+            <div>
+              <Knob
+                label="key"
+                value={key}
+                position={KEYS.indexOf(key) / (KEYS.length - 1)}
+                detents={KEYS.length}
+                onPosition={(p) => setKey(atPosition(KEYS, p))}
               />
-            </Tooltip>
-            <Tooltip label="BPM stored on each candidate; the transport bar can override during audition">
-              <NumberInput
-                label="tempo"
-                w={80}
-                min={40}
-                max={220}
-                value={tempo}
-                onChange={(v) => setTempo(Number(v) || 100)}
-              />
-            </Tooltip>
-            <Tooltip label="Phrase length in bars of 4/4 — candidates must fill it exactly">
-              <Select
-                label="bars"
-                w={64}
-                value={String(bars)}
-                onChange={(v) => v && setBars(Number(v))}
-                data={['2', '4', '8']}
-              />
-            </Tooltip>
-            <Tooltip label="Lead: one clear melodic line with occasional chords (≤4 voices). Poly: chords, pads, and counterpoint welcome (≤6 voices, up to 4 parts)">
-              <Fieldset legend="texture">
-                <Chip.Group
-                  multiple={false}
-                  value={texture}
-                  onChange={(v) => v && setTexture(v as Texture)}
-                >
-                  <Group gap="0.4rem" wrap="nowrap">
-                    <Chip value="lead">lead + light harmony</Chip>
-                    <Chip value="poly">freely polyphonic</Chip>
-                  </Group>
-                </Chip.Group>
-              </Fieldset>
-            </Tooltip>
-            <Tooltip label="Every candidate includes a drum-kit part (GM percussion) grooving under the melodic material">
-              <Checkbox
-                className="check"
-                label="rhythm part"
-                checked={includeRhythm}
-                onChange={(e) => setIncludeRhythm(e.currentTarget.checked)}
-              />
-            </Tooltip>
-            <Tooltip label="Allow notes outside the chosen key/mode (passing tones, color notes). Off = strictly in-scale; out-of-scale notes only warn, never discard">
-              <Checkbox
-                className="check"
-                label="chromatic ok"
-                checked={allowChromatic}
-                onChange={(e) => setAllowChromatic(e.currentTarget.checked)}
-              />
-            </Tooltip>
-          </Group>
-          <Tooltip label="Song concept / leitmotif tag — candidates are grouped under it in the Concepts view">
-            <TextInput
-              label="concept"
-              placeholder="e.g. event horizon"
-              value={concept}
-              onChange={(e) => setConcept(e.currentTarget.value)}
-            />
+            </div>
           </Tooltip>
+          <Tooltip label="Scale flavor: ionian = major, aeolian = natural minor; dorian/mixolydian sit between, phrygian/locrian are darker, lydian brighter">
+            <div>
+              <Knob
+                label="mode"
+                value={MODE_SHORT[mode]}
+                position={MODES.indexOf(mode) / (MODES.length - 1)}
+                detents={MODES.length}
+                onPosition={(p) => setMode(atPosition(MODES, p))}
+              />
+            </div>
+          </Tooltip>
+          <Tooltip label="BPM stored on each candidate; the transport strip can override during audition">
+            <div>
+              <Knob
+                label="tempo"
+                value={String(tempo)}
+                position={(tempo - 40) / 180}
+                detents={91}
+                onPosition={(p) => setTempo(40 + Math.round((p * 180) / 2) * 2)}
+                variant="light"
+              />
+            </div>
+          </Tooltip>
+          <Tooltip label="Phrase length in bars of 4/4 — candidates must fill it exactly">
+            <div>
+              <Knob
+                label="bars"
+                value={String(bars)}
+                position={BARS.indexOf(bars) / (BARS.length - 1)}
+                detents={BARS.length}
+                onPosition={(p) => setBars(atPosition(BARS, p))}
+                variant="light"
+              />
+            </div>
+          </Tooltip>
+        </div>
+        <div className="gen-divider" />
+        <div className="gen-mid">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <span className="micro" style={{ letterSpacing: '.14em' }}>
+              Brief · concept
+            </span>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <Tooltip label="Lead: one clear melodic line with occasional chords (≤4 voices). Off: freely polyphonic (≤6 voices, up to 4 parts)">
+                <HardToggle on={lead} label="lead" onChange={setLead} />
+              </Tooltip>
+              <Tooltip label="Every candidate includes a drum-kit part (GM percussion) grooving under the melodic material">
+                <HardToggle on={includeRhythm} label="rhythm" onChange={setIncludeRhythm} />
+              </Tooltip>
+              <Tooltip label="Allow notes outside the chosen key/mode (passing tones, color notes). Off = strictly in-scale; out-of-scale notes only warn, never discard">
+                <HardToggle on={allowChromatic} label="chromatic" onChange={setAllowChromatic} />
+              </Tooltip>
+            </div>
+          </div>
           <Tooltip label="Free-text direction: contour, rhythmic character, emotional intent, references — anything the composer should honor">
             <Textarea
-              label="brief"
-              rows={3}
+              rows={2}
               placeholder="Contour, rhythmic character, emotional intent… e.g. slow rise then collapse, sparse and hollow, dread that resolves too late"
               value={text}
               onChange={(e) => setText(e.currentTarget.value)}
             />
           </Tooltip>
-          <Group gap="0.75rem">
-            <Tooltip label="Queue one batch of 5 candidates matching the brief">
-              <Button variant="filled" onClick={() => generate(5)}>
-                Generate 5
-              </Button>
-            </Tooltip>
-            <Tooltip label="Queue four batches of 5 — builds toward a big pool to triage">
-              <Button onClick={() => generate(20)}>Generate 20</Button>
-            </Tooltip>
-            <span className="spacer" />
-            <Tooltip label="Free rein: the model picks key, mode, tempo, texture, and instrumentation">
-              <Button variant="outline" color="yellow" onClick={surprise}>
-                🎲 Surprise me
-              </Button>
-            </Tooltip>
-          </Group>
-        </Stack>
-      </Collapse>
+          <Tooltip label="Song concept / leitmotif tag — candidates are grouped under it in the Concepts view">
+            <TextInput
+              placeholder="concept — e.g. event horizon"
+              value={concept}
+              onChange={(e) => setConcept(e.currentTarget.value)}
+            />
+          </Tooltip>
+        </div>
+        <div className="gen-actions">{actions(false)}</div>
+      </div>
     </section>
   )
 }

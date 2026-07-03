@@ -1,97 +1,164 @@
-import { useMemo, useState } from 'react'
-import { Button, Group, Kbd, Loader, Text, Tooltip } from '@mantine/core'
-import { useAppState } from '../store/AppContext'
+import { useCallback, useMemo, useState } from 'react'
+import { Tooltip } from '@mantine/core'
+import type { Motif } from '../types'
+import { buildFamilies, rootIdOf } from '../core/families'
+import { useAppDispatch, useAppState } from '../store/AppContext'
 import { useGridColumns } from './hooks/useGridColumns'
 import { useKeyboardTriage } from './hooks/useKeyboardTriage'
 import { GenerationPanel } from './GenerationPanel'
 import { MotifCard } from './MotifCard'
+import { FamilyTray } from './FamilyTray'
 
-type Filter = 'unrated' | 'rated' | 'discarded' | 'all'
+type Filter = 'all' | 'unrated' | 'rated' | 'discarded'
 
 const FILTER_HINTS: Record<Filter, string> = {
-  all: 'Everything except discards',
-  unrated: 'Still to triage — no rating yet',
-  rated: 'Rated 1–5 stars',
-  discarded: 'Soft-deleted with x — press u to undo the most recent discard',
+  all: 'Every family except discards',
+  unrated: 'Families still to triage — face not rated yet',
+  rated: 'Families whose face is rated 1–5',
+  discarded: 'Families discarded with x — press u to undo the most recent',
 }
 
 export function TriageGrid() {
   const state = useAppState()
+  const dispatch = useAppDispatch()
   const [filter, setFilter] = useState<Filter>('all')
   const { gridRef, columns } = useGridColumns()
 
+  const families = useMemo(() => buildFamilies(state.motifs), [state.motifs])
+
   const visible = useMemo(() => {
-    const all = [...state.motifs.values()].sort((a, b) => a.createdAt - b.createdAt)
     switch (filter) {
       case 'unrated':
-        return all.filter((m) => !m.discarded && m.rating === 0)
+        return families.filter((f) => !f.root.discarded && f.face.rating === 0)
       case 'rated':
-        return all.filter((m) => !m.discarded && m.rating > 0)
+        return families.filter((f) => !f.root.discarded && f.face.rating > 0)
       case 'discarded':
-        return all.filter((m) => m.discarded)
+        return families.filter((f) => f.root.discarded)
       case 'all':
-        return all.filter((m) => !m.discarded)
+        return families.filter((f) => !f.root.discarded)
     }
-  }, [state.motifs, filter])
+  }, [families, filter])
 
-  useKeyboardTriage(visible, columns, state.mutationTargetId === null)
+  const faces = useMemo(() => visible.map((f) => f.face), [visible])
 
-  const counts = useMemo(() => {
-    const all = [...state.motifs.values()]
-    return {
-      unrated: all.filter((m) => !m.discarded && m.rating === 0).length,
-      rated: all.filter((m) => !m.discarded && m.rating > 0).length,
-      discarded: all.filter((m) => m.discarded).length,
-      all: all.filter((m) => !m.discarded).length,
+  const toggleFold = useCallback(
+    (m: Motif) => {
+      const rid = rootIdOf(m, state.motifs)
+      dispatch({ type: 'SET_EXPANDED_FAMILY', id: state.expandedFamilyId === rid ? null : rid })
+    },
+    [dispatch, state.motifs, state.expandedFamilyId],
+  )
+  const openBay = useCallback(
+    (m: Motif) => dispatch({ type: 'SET_MUTATION_TARGET', id: m.id }),
+    [dispatch],
+  )
+  const promote = useCallback(
+    (m: Motif) => {
+      const fam = families.find((f) => f.rootId === rootIdOf(m, state.motifs))
+      if (fam) {
+        dispatch({ type: 'MOTIF_PROMOTED', id: m.id, familyIds: fam.members.map((x) => x.id) })
+      }
+    },
+    [families, state.motifs, dispatch],
+  )
+
+  const expandedFamily = useMemo(
+    () => families.find((f) => f.rootId === state.expandedFamilyId),
+    [families, state.expandedFamilyId],
+  )
+
+  useKeyboardTriage(faces, columns, state.mutationTargetId === null, {
+    onFold: toggleFold,
+    onMutate: openBay,
+    onPromote: promote,
+    tray: expandedFamily
+      ? { anchorId: expandedFamily.face.id, motifs: expandedFamily.members }
+      : undefined,
+  })
+
+  const counts = useMemo(
+    () => ({
+      all: families.filter((f) => !f.root.discarded).length,
+      unrated: families.filter((f) => !f.root.discarded && f.face.rating === 0).length,
+      rated: families.filter((f) => !f.root.discarded && f.face.rating > 0).length,
+      discarded: families.filter((f) => f.root.discarded).length,
+    }),
+    [families],
+  )
+
+  // The fold-out tray spans the full grid width directly under the expanded
+  // card's row — insert it after the last card of that row.
+  const expandedIdx = visible.findIndex((f) => f.rootId === state.expandedFamilyId)
+  const trayAfter =
+    expandedIdx < 0 ? -1 : Math.min(visible.length, (Math.floor(expandedIdx / columns) + 1) * columns)
+
+  const cells: React.ReactNode[] = []
+  visible.forEach((f, i) => {
+    cells.push(
+      <MotifCard
+        key={f.rootId}
+        family={f}
+        selected={f.face.id === state.selectedId}
+        expanded={f.rootId === state.expandedFamilyId}
+        onToggleExpand={() => toggleFold(f.face)}
+      />,
+    )
+    if (i + 1 === trayAfter) {
+      cells.push(
+        <FamilyTray
+          key={`tray-${state.expandedFamilyId}`}
+          family={visible[expandedIdx]}
+          onFold={() => dispatch({ type: 'SET_EXPANDED_FAMILY', id: null })}
+        />,
+      )
     }
-  }, [state.motifs])
+  })
 
   return (
-    <div className="triage">
+    <>
       <GenerationPanel />
-      <Group gap="0.5rem" mb="0.9rem">
+      <div className="filter-row">
         {(['all', 'unrated', 'rated', 'discarded'] as Filter[]).map((f) => (
           <Tooltip key={f} label={FILTER_HINTS[f]}>
-            <Button
-              radius="xl"
-              variant={filter === f ? 'light' : 'default'}
-              color={filter === f ? 'forge' : 'gray'}
-              onClick={() => setFilter(f)}
-            >
-              {f} ({counts[f]})
-            </Button>
+            <button className="hw-key" data-latched={filter === f} onClick={() => setFilter(f)}>
+              {f} {counts[f]}
+            </button>
           </Tooltip>
         ))}
-        <Text size="xs" c="dimmed" ml="auto" component="span">
-          <Kbd size="xs">←</Kbd>
-          <Kbd size="xs">→</Kbd>
-          <Kbd size="xs">↑</Kbd>
-          <Kbd size="xs">↓</Kbd> navigate · <Kbd size="xs">space</Kbd> play ·{' '}
-          <Kbd size="xs">1</Kbd>–<Kbd size="xs">5</Kbd> rate · <Kbd size="xs">x</Kbd> discard ·{' '}
-          <Kbd size="xs">u</Kbd> undo
-        </Text>
-      </Group>
+        <Tooltip label="Mutating never adds cards to the grid — variants land inside each family's fold-out tray">
+          <span className="note-chip">Counts = families · variants stay inside</span>
+        </Tooltip>
+        <span className="spacer" />
+        <span className="kbd-legend">
+          <b className="hk">← → ↑ ↓</b> nav · <b className="hk">space</b> play ·{' '}
+          <b className="hk">1–5</b> rate · <b className="hk">x</b> discard ·{' '}
+          <b className="hk">u</b> undo · <b className="hk">f</b> fold out ·{' '}
+          <b className="hk">p</b> promote · <b className="hk">m</b> mutate
+        </span>
+      </div>
       {visible.length === 0 && state.pending.length === 0 ? (
-        <Text c="dimmed" ta="center" py="3rem">
+        <div className="empty-note">
           {state.motifs.size === 0
-            ? 'No motifs yet — write a brief above and generate a batch.'
+            ? 'No motifs yet — expand GENERATE above, write a brief, and queue a batch.'
             : 'Nothing matches this filter.'}
-        </Text>
+        </div>
       ) : (
-        <div className="motif-grid" ref={gridRef}>
-          {visible.map((m) => (
-            <MotifCard key={m.id} motif={m} selected={m.id === state.selectedId} />
-          ))}
+        <div className="motif-grid triage-grid" ref={gridRef}>
+          {cells}
           {state.pending.map((b) => (
-            <div key={b.id} className="motif-card pending-card">
-              <Loader size="xs" type="dots" />
-              <Text size="xs" c="dimmed">
-                generating {b.count} · {b.label}
-              </Text>
+            <div key={b.id} className="pending-card">
+              <span className="pending-dots">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span className="pending-label">
+                Generating {b.count} · {b.label}
+              </span>
             </div>
           ))}
         </div>
       )}
-    </div>
+    </>
   )
 }

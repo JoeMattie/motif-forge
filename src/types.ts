@@ -37,7 +37,8 @@ export type MotifSource =
   | { kind: 'seed' }
   | { kind: 'generated'; brief: string; batchId: string }
   | { kind: 'transform'; parentId: string; transform: string }
-  | { kind: 'llm-mutation'; parentId: string; brief: string }
+  /** variedParts: indices of the parts the LLM was armed to rewrite (locked parts round-trip verbatim). */
+  | { kind: 'llm-mutation'; parentId: string; brief: string; variedParts?: number[] }
 
 export type Rating = 0 | 1 | 2 | 3 | 4 | 5
 
@@ -56,6 +57,11 @@ export interface Motif {
   conceptId: string | null
   rating: Rating
   discarded: boolean
+  /** Exactly one motif per family may be promoted — it becomes the family's face
+   * (grid card, playback, exports). No flag anywhere = the root is the face. */
+  promoted?: boolean
+  /** Track assignment in the Concepts / leitmotif desk (e.g. "01"). */
+  trackId?: string | null
   scaleWarning: boolean
   rationale?: string
   createdAt: number

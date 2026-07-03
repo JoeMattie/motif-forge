@@ -1,166 +1,164 @@
 import { useEffect, useRef } from 'react'
-import { ActionIcon, Badge, Button, Group, Rating, Tooltip } from '@mantine/core'
-import type { Motif, Rating as RatingValue } from '../types'
+import { Tooltip } from '@mantine/core'
+import { CaretDownIcon, CaretRightIcon } from '@phosphor-icons/react'
+import type { Part, Rating as RatingValue } from '../types'
+import type { Family } from '../core/families'
 import { engine } from '../audio/engine'
-import { motifToMidi, midiFilename } from '../core/midi'
-import { audioBufferToWavBlob } from '../core/wav'
-import { downloadBlob } from '../core/downloads'
-import { renderMotif } from '../audio/renderOffline'
-import { effectiveTempo } from '../store/appState'
-import { useAppDispatch, useAppState } from '../store/AppContext'
+import { recordTriageAction } from '../store/sessionPace'
+import { useAppDispatch } from '../store/AppContext'
 import { useIsLoading, useIsPlaying } from './hooks/usePlayhead'
-import { PianoRoll } from './PianoRoll'
+import { usePlayOptions } from './hooks/usePlayOptions'
+import { LcdRoll } from './LcdRoll'
+import { PlayRound } from './hw/PlayRound'
+import { RateSquares } from './hw/RateSquares'
 
-interface MotifCardProps {
-  motif: Motif
-  selected: boolean
-  showConcept?: boolean
+const PART_CODES: Record<string, string> = {
+  lead: 'LD',
+  melody: 'LD',
+  harmony: 'HM',
+  pad: 'PD',
+  bass: 'BS',
+  drums: 'DR',
 }
 
-export function MotifCard({ motif, selected, showConcept }: MotifCardProps) {
-  const state = useAppState()
+export function partCode(p: Part): string {
+  return PART_CODES[p.name.toLowerCase()] ?? p.name.slice(0, 2).toUpperCase()
+}
+
+interface MotifCardProps {
+  family: Family
+  selected: boolean
+  /** Family tray currently folded out under this card. */
+  expanded?: boolean
+  onToggleExpand?: () => void
+  /** Extra footer row with the concept select + exports (Library). */
+  conceptRow?: React.ReactNode
+}
+
+/**
+ * One triage-grid card = one FAMILY. Shows the family's face (promoted take
+ * or origin); variants stay inside the fold-out tray. The stack lip on the
+ * top edge is the only grid trace of a family with variants.
+ */
+export function MotifCard({ family, selected, expanded, onToggleExpand, conceptRow }: MotifCardProps) {
   const dispatch = useAppDispatch()
-  const isPlaying = useIsPlaying(motif.id)
-  const isLoading = useIsLoading(motif.id)
+  const playOpts = usePlayOptions()
+  const face = family.face
+  const isPlaying = useIsPlaying(face.id)
+  const isLoading = useIsLoading(face.id)
   const cardRef = useRef<HTMLDivElement | null>(null)
+  const discarded = family.root.discarded
 
   useEffect(() => {
     if (selected) cardRef.current?.scrollIntoView({ block: 'nearest' })
   }, [selected])
 
-  const tempo = effectiveTempo(state.transport, motif)
-  const playOpts = {
-    tempo,
-    metronome: state.transport.metronome,
-    drone: state.transport.drone,
-    sound: state.transport.sound,
-    forceSound: state.transport.forceSound,
-  }
-
-  const exportMidi = () => {
-    downloadBlob(
-      new Blob([motifToMidi(motif, tempo).buffer as ArrayBuffer], { type: 'audio/midi' }),
-      midiFilename(motif, tempo),
-    )
-  }
-
-  const exportWav = async () => {
-    const buf = await renderMotif(motif, tempo, {
-      drone: state.transport.drone,
-      sound: state.transport.sound,
-      forceSound: state.transport.forceSound,
-    })
-    downloadBlob(audioBufferToWavBlob(buf), midiFilename(motif, tempo).replace(/\.mid$/, '.wav'))
-  }
-
-  const concept = motif.conceptId ? state.concepts.get(motif.conceptId) : null
+  const cls = [
+    'motif-card',
+    selected ? 'selected' : '',
+    isPlaying ? 'playing' : '',
+    discarded ? 'discarded' : '',
+    expanded ? 'expanded' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <div
       ref={cardRef}
-      className={`motif-card${selected ? ' selected' : ''}${isPlaying ? ' playing' : ''}${motif.discarded ? ' discarded' : ''}`}
-      onClick={() => dispatch({ type: 'SELECT', id: motif.id })}
+      className={cls}
+      onClick={() => {
+        dispatch({ type: 'SELECT', id: face.id })
+        // Clicking a card that has variants folds its tray out (chip/F toggles it back in).
+        if (family.variants.length > 0 && onToggleExpand && !expanded) onToggleExpand()
+      }}
     >
+      {family.variants.length > 0 && !expanded && <span className="stack-lip" />}
       <div className="card-head">
-        {/* undefined (not false) when rationale exists, so the global hints toggle still applies */}
-        <Tooltip label={motif.rationale} disabled={motif.rationale ? undefined : true}>
-          <span className="card-name">{motif.name}</span>
+        <Tooltip label={face.rationale} disabled={face.rationale ? undefined : true}>
+          <span className="card-name">{face.name}</span>
         </Tooltip>
         <span className="card-meta">
-          {motif.key} {motif.mode} · {motif.bars}b · {motif.tempo}bpm
+          {face.bars}B · {face.tempo}
         </span>
       </div>
-      <PianoRoll motif={motif} />
-      {motif.parts.length > 1 && (
+      <LcdRoll motif={face} muted={discarded} />
+      {(face.parts.length > 1 || face.scaleWarning) && (
         <div className="part-legend">
-          {motif.parts.map((p, i) => (
-            <Tooltip
-              key={i}
-              label={p.preset ? `${p.name}: ${p.preset.oscillator} synth` : p.name}
-            >
-              <span className={`part-chip part-${i}`}>
-                {p.name}·{p.instrument}
+          {face.parts.length > 1 &&
+            face.parts.map((p, i) => (
+              <Tooltip key={i} label={p.preset ? `${p.name}: ${p.preset.oscillator} synth` : `${p.name} · ${p.instrument}`}>
+                <span>
+                  <i className={`part-swatch ${p.instrument === 'drums' ? 'drums' : `part-${i}`}`} />
+                  {partCode(p)}
+                </span>
+              </Tooltip>
+            ))}
+          {face.scaleWarning && (
+            <Tooltip label="Contains out-of-scale pitches">
+              <span className="chr-chip" style={{ marginLeft: 'auto' }}>
+                CHR
               </span>
             </Tooltip>
-          ))}
+          )}
         </div>
       )}
-      <Group gap="0.45rem" wrap="nowrap">
-        <Tooltip label="Play/stop (Space)">
-          <ActionIcon
-            className="play-btn"
-            variant="default"
-            size="lg"
+      {discarded ? (
+        <div className="card-footer">
+          <span className="discard-chip">
+            Discarded · <b className="hk">U</b> to undo
+          </span>
+          <span className="spacer" />
+          <button
+            className="text-btn"
             onClick={(e) => {
               e.stopPropagation()
-              dispatch({ type: 'SELECT', id: motif.id })
-              engine.toggle(motif, playOpts)
+              dispatch({ type: 'MOTIF_RESTORED', id: family.root.id })
             }}
           >
-            {isLoading ? '…' : isPlaying ? '■' : '▶'}
-          </ActionIcon>
-        </Tooltip>
-        <Tooltip label="Rate (keys 1–5 while selected)">
-          <Rating
-            size="xs"
-            value={motif.rating}
-            onChange={(r) => dispatch({ type: 'MOTIF_RATED', id: motif.id, rating: r as RatingValue })}
-            onClick={(e) => e.stopPropagation()}
-          />
-        </Tooltip>
-        {motif.scaleWarning && (
-          <Tooltip label="Contains out-of-scale pitches">
-            <Badge color="yellow" size="xs" tt="none">
-              chr
-            </Badge>
+            Restore
+          </button>
+        </div>
+      ) : (
+        <div className="card-footer">
+          <Tooltip label="Play/stop the promoted take (Space)">
+            <PlayRound
+              playing={isPlaying}
+              loading={isLoading}
+              onClick={() => {
+                dispatch({ type: 'SELECT', id: face.id })
+                engine.toggle(face, playOpts(face))
+              }}
+            />
           </Tooltip>
-        )}
-        {showConcept && concept && (
-          <Badge color="blue" size="xs" tt="none">
-            {concept.name}
-          </Badge>
-        )}
-        <span className="spacer" />
-        <Tooltip label="Open in the mutation panel">
-          <Button
-            variant="subtle"
-            color="gray"
-            size="compact-sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              dispatch({ type: 'SET_MUTATION_TARGET', id: motif.id })
+          <RateSquares
+            rating={face.rating}
+            onRate={(r) => {
+              dispatch({ type: 'MOTIF_RATED', id: face.id, rating: r as RatingValue })
+              recordTriageAction()
             }}
-          >
-            mutate
-          </Button>
-        </Tooltip>
-        <Tooltip label="Download MIDI">
-          <Button
-            variant="subtle"
-            color="gray"
-            size="compact-sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              exportMidi()
-            }}
-          >
-            .mid
-          </Button>
-        </Tooltip>
-        <Tooltip label="Download WAV">
-          <Button
-            variant="subtle"
-            color="gray"
-            size="compact-sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              void exportWav()
-            }}
-          >
-            .wav
-          </Button>
-        </Tooltip>
-      </Group>
+          />
+          <span className="spacer" />
+          {onToggleExpand && (
+            <Tooltip label="Fold the family tray out/in (F) — variants live inside, the pool count never inflates">
+              <button
+                className="family-chip"
+                aria-label={`Family ${Math.max(1, family.variants.length)}`}
+                data-open={expanded ?? false}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggleExpand()
+                }}
+              >
+                <b className="hk">F</b>amily{' '}
+                {expanded ? <CaretDownIcon size={8} weight="bold" /> : <CaretRightIcon size={8} weight="bold" />}{' '}
+                {Math.max(1, family.variants.length)}
+              </button>
+            </Tooltip>
+          )}
+        </div>
+      )}
+      {conceptRow}
     </div>
   )
 }

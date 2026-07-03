@@ -54,9 +54,13 @@ export function AppProvider({
         action.type === 'MOTIF_RATED' ||
         action.type === 'MOTIF_DISCARDED' ||
         action.type === 'MOTIF_RESTORED' ||
-        action.type === 'MOTIF_ASSIGNED_CONCEPT'
+        action.type === 'MOTIF_ASSIGNED_CONCEPT' ||
+        action.type === 'MOTIF_ASSIGNED_TRACK'
       ) {
         pendingMotifWrites.add(action.id)
+      }
+      if (action.type === 'MOTIF_PROMOTED' || action.type === 'FAMILY_ASSIGNED_CONCEPT') {
+        for (const fid of action.familyIds) pendingMotifWrites.add(fid)
       }
     }
   }, [dispatch])

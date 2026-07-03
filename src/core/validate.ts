@@ -185,6 +185,35 @@ function validateOne(raw: unknown, ctx: ValidationContext, index: number): Motif
   }
 }
 
+/**
+ * Mutation-bay PART LOCK check: every locked part's notes must round-trip
+ * from parent to child unchanged (same count; identical pitch/velocity/part,
+ * timing within EPS). Children that fail are dropped by the caller.
+ */
+export function lockedPartsRoundTrip(parent: Motif, child: Motif, lockedParts: number[]): boolean {
+  const key = (n: Note) => `${n.part ?? 0}`
+  const sortNotes = (ns: Note[]) =>
+    [...ns].sort((a, b) => a.startBeat - b.startBeat || a.pitch - b.pitch)
+  for (const p of lockedParts) {
+    const pn = sortNotes(parent.notes.filter((n) => Number(key(n)) === p))
+    const cn = sortNotes(child.notes.filter((n) => Number(key(n)) === p))
+    if (pn.length !== cn.length) return false
+    for (let i = 0; i < pn.length; i++) {
+      const a = pn[i]
+      const b = cn[i]
+      if (
+        a.pitch !== b.pitch ||
+        a.velocity !== b.velocity ||
+        Math.abs(a.startBeat - b.startBeat) > EPS ||
+        Math.abs(a.durationBeats - b.durationBeats) > EPS
+      ) {
+        return false
+      }
+    }
+  }
+  return true
+}
+
 export function validateBatch(raw: unknown, ctx: ValidationContext): ValidationResult {
   const result: ValidationResult = { valid: [], droppedCount: 0, scaleWarningCount: 0, errors: [] }
   const list =

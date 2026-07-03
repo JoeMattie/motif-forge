@@ -2,11 +2,13 @@ import { useEffect } from 'react'
 import { Center, Group, Loader, Text } from '@mantine/core'
 import { useAppDispatch, useAppState } from './store/AppContext'
 import { SAMPLE_MOTIFS } from './core/sampleMotifs'
-import { TransportBar } from './components/TransportBar'
+import { Header } from './components/Header'
+import { TransportStrip } from './components/TransportStrip'
 import { TriageGrid } from './components/TriageGrid'
+import { FocusTriage } from './components/FocusTriage'
 import { LibraryView } from './components/LibraryView'
 import { ConceptView } from './components/ConceptView'
-import { MutationPanel } from './components/MutationPanel'
+import { MutationBay } from './components/MutationBay'
 
 export function App() {
   const state = useAppState()
@@ -33,21 +35,29 @@ export function App() {
     )
   }
 
-  const mutationTarget = state.mutationTargetId
-    ? state.motifs.get(state.mutationTargetId)
-    : undefined
+  const baySource = state.mutationTargetId ? state.motifs.get(state.mutationTargetId) : undefined
 
   return (
     <div className="app">
-      <TransportBar />
-      <main className={mutationTarget ? 'with-panel' : ''}>
+      <Header />
+      <main>
         <div className="view">
-          {state.view === 'triage' && <TriageGrid />}
-          {state.view === 'library' && <LibraryView />}
-          {state.view === 'concepts' && <ConceptView />}
+          {baySource ? (
+            <MutationBay key={baySource.id} source={baySource} />
+          ) : state.view === 'triage' ? (
+            state.triageMode === 'grid' ? (
+              <TriageGrid />
+            ) : (
+              <FocusTriage />
+            )
+          ) : state.view === 'library' ? (
+            <LibraryView />
+          ) : (
+            <ConceptView />
+          )}
         </div>
-        {mutationTarget && <MutationPanel key={mutationTarget.id} motif={mutationTarget} />}
       </main>
+      <TransportStrip />
     </div>
   )
 }

@@ -7,7 +7,7 @@ import {
   buildSurprisePrompt,
   type MutationOptions,
 } from './prompts'
-import { validateBatch, type ValidationResult } from '../core/validate'
+import { lockedPartsRoundTrip, validateBatch, type ValidationResult } from '../core/validate'
 import { newId } from '../core/ids'
 
 // Sized for ~5 polyphonic motifs of minified JSON (multi-part + drums can run
@@ -75,7 +75,9 @@ export async function mutateBatch(
   n: number,
   opts: MutationOptions = {},
 ): Promise<ValidationResult> {
-  return runBatch(
+  const locked = (opts.lockedParts ?? []).filter((i) => i >= 0 && i < parent.parts.length)
+  const varied = parent.parts.map((_, i) => i).filter((i) => !locked.includes(i))
+  const result = await runBatch(
     buildMutationPrompt(parent, mutationBrief, n, opts),
     (m) => buildMutationPrompt(parent, mutationBrief, m, opts),
     n,
@@ -88,7 +90,24 @@ export async function mutateBatch(
         tempo: parent.tempo,
         allowChromatic: true,
         conceptId: parent.conceptId,
-        source: () => ({ kind: 'llm-mutation', parentId: parent.id, brief: mutationBrief }),
+        source: () => ({
+          kind: 'llm-mutation',
+          parentId: parent.id,
+          brief: mutationBrief,
+          ...(parent.parts.length > 0 && locked.length > 0 ? { variedParts: varied } : {}),
+        }),
       }),
   )
+  // PART LOCK is a hard contract: children whose locked parts don't
+  // round-trip verbatim are dropped, per the brief's validation rule.
+  if (locked.length > 0) {
+    const kept = result.valid.filter((child) => lockedPartsRoundTrip(parent, child, locked))
+    const droppedHere = result.valid.length - kept.length
+    if (droppedHere > 0) {
+      result.errors.push(`${droppedHere} dropped: locked parts were modified`)
+      result.droppedCount += droppedHere
+      result.valid = kept
+    }
+  }
+  return result
 }
