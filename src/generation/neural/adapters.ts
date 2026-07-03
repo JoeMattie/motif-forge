@@ -216,6 +216,25 @@ export function eventsToMotif(rows: number[][], tokenizer: MidiTokenizerV2): Raw
   }
 }
 
+/**
+ * Trim a decoded motif to the requested window: drop prompt-material notes
+ * before `fromBeat`, rebase the rest to beat 0, clamp everything into `bars`.
+ * Used for continuations, where the keeper's own notes ride along in the
+ * decoded rows.
+ */
+export function trimRawMotif(raw: RawMotif, fromBeat: number, bars: number): RawMotif {
+  const totalBeats = bars * beatsPerBar(raw.timeSig)
+  const notes = raw.notes
+    .filter((n) => n.startBeat >= fromBeat - 1e-6)
+    .map((n) => ({ ...n, startBeat: n.startBeat - fromBeat }))
+    .filter((n) => n.startBeat < totalBeats - 1e-6)
+    .map((n) => ({
+      ...n,
+      durationBeats: Math.min(n.durationBeats, totalBeats - n.startBeat),
+    }))
+  return { ...raw, notes, bars }
+}
+
 export interface PromptSpec {
   bpm: number
   timeSig: string // "4/4"

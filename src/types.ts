@@ -49,6 +49,10 @@ export type MotifSource =
    * Children start their own family (they're fresh triage candidates); ancestry
    * stays queryable via parentIds. */
   | { kind: 'ga'; batchId: string; seed: number; op: string; parentIds: string[] }
+  /** Tier-2 offline generation: on-device neural model (SkyTNT midi-model).
+   * parentId set when the candidate continued a keeper (neural variation);
+   * like 'ga', children start their own family. */
+  | { kind: 'neural'; batchId: string; seed: number; parentId?: string }
 
 export type Rating = 0 | 1 | 2 | 3 | 4 | 5
 

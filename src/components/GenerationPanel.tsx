@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import {
   Button,
   NumberInput,
@@ -18,8 +18,16 @@ import {
   keepersOf,
   randomSeed,
 } from '../generation/symbolic'
+import {
+  enableNeural,
+  getNeuralSnapshot,
+  removeNeuralModel,
+  requestNeuralBatch,
+  subscribeNeural,
+} from '../generation/neural/client'
+import { MODEL_TOTAL_BYTES } from '../generation/neural/manifest'
 import { enqueue } from '../api/queue'
-import type { ValidationResult } from '../core/validate'
+import { validateBatch, type ValidationResult } from '../core/validate'
 import { useAppDispatch, useAppState } from '../store/AppContext'
 import { newId } from '../core/ids'
 import { Knob } from './hw/Knob'
@@ -42,7 +50,52 @@ const MODE_SHORT: Record<Mode, string> = {
 const atPosition = <T,>(list: readonly T[], position: number): T =>
   list[Math.max(0, Math.min(list.length - 1, Math.round(position * (list.length - 1))))]
 
-type Engine = 'instant' | 'claude'
+type Engine = 'instant' | 'neural' | 'claude'
+
+/** Neural tier status line shown while the NEURAL engine is selected. */
+function NeuralStrip() {
+  const neural = useSyncExternalStore(subscribeNeural, getNeuralSnapshot)
+  const mb = Math.round(MODEL_TOTAL_BYTES / (1024 * 1024))
+  return (
+    <div className="gen-neural-strip" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+      <span className="micro" style={{ letterSpacing: '.14em' }}>
+        Neural
+      </span>
+      {neural.state === 'unsupported' && (
+        <span className="micro">WEBGPU UNAVAILABLE — INSTANT + CLAUDE ONLY</span>
+      )}
+      {neural.state === 'idle' && (
+        <Tooltip label={`One-time download of the on-device model (~${mb} MB), cached in browser storage. Everything runs locally after that`}>
+          <Button className="green" onClick={() => void enableNeural()}>
+            <span>Enable · {mb} MB</span>
+          </Button>
+        </Tooltip>
+      )}
+      {neural.state === 'downloading' && (
+        <span className="micro">DOWNLOADING… {Math.round(neural.progress * 100)}%</span>
+      )}
+      {neural.state === 'loading' && <span className="micro">LOADING MODEL…</span>}
+      {neural.state === 'ready' && (
+        <>
+          <span className="micro">READY — ON-DEVICE, OFFLINE</span>
+          <Tooltip label="Delete the downloaded model from browser storage">
+            <Button className="danger-text" onClick={() => void removeNeuralModel()}>
+              Remove
+            </Button>
+          </Tooltip>
+        </>
+      )}
+      {neural.state === 'error' && (
+        <>
+          <span className="micro" style={{ color: 'var(--danger, #c33)' }}>
+            {neural.error?.toUpperCase().slice(0, 80)}
+          </span>
+          <Button onClick={() => void enableNeural()}>Retry</Button>
+        </>
+      )}
+    </div>
+  )
+}
 
 export function GenerationPanel() {
   const { concepts, motifs } = useAppState()
@@ -93,25 +146,81 @@ export function GenerationPanel() {
       .finally(() => dispatch({ type: 'BATCH_FINISHED', id: batchId }))
   }
 
-  const generate = (count: number) => {
-    const brief: GenerationBrief = {
-      key,
-      mode,
-      tempo: Math.max(40, Math.min(220, Math.round(tempo))),
-      bars,
-      timeSig: '4/4',
-      concept,
-      text,
-      allowChromatic,
-      texture: lead ? 'lead' : 'poly',
-      includeRhythm,
-      extraInstruments,
+  /** Neural batch: candidates stream in one by one as the worker decodes them. */
+  const queueNeuralBatch = (count: number, label: string, brief: GenerationBrief) => {
+    if (getNeuralSnapshot().state !== 'ready') {
+      dispatch({
+        type: 'GENERATION_FAILED',
+        message: 'Neural model not ready — enable it in the generation panel',
+      })
+      return
     }
+    const batchId = newId()
+    const conceptId = resolveConceptId()
+    dispatch({ type: 'BATCH_QUEUED', batch: { id: batchId, count, label } })
+    let added = 0
+    let dropped = 0
+    let chromatic = 0
+    requestNeuralBatch({
+      brief,
+      n: count,
+      keepers: keepersOf(motifs.values()),
+      seed: randomSeed(),
+      onMotif: (raw, seed, parentId) => {
+        const result = validateBatch([raw], {
+          key: brief.key,
+          mode: brief.mode,
+          bars: brief.bars,
+          timeSig: brief.timeSig,
+          tempo: brief.tempo,
+          allowChromatic: true,
+          conceptId,
+          source: () => ({ kind: 'neural', batchId, seed, ...(parentId ? { parentId } : {}) }),
+        })
+        added += result.valid.length
+        dropped += result.droppedCount
+        chromatic += result.scaleWarningCount
+        if (result.valid.length > 0) dispatch({ type: 'MOTIFS_ADDED', motifs: result.valid })
+      },
+      onDone: () => {
+        dispatch({
+          type: 'GENERATION_FINISHED',
+          message: `${added} added${dropped ? `, ${dropped} dropped` : ''}${chromatic ? `, ${chromatic} chromatic` : ''}`,
+        })
+        dispatch({ type: 'BATCH_FINISHED', id: batchId })
+      },
+      onError: (message) => {
+        dispatch({ type: 'GENERATION_FAILED', message: `Neural generation failed: ${message}` })
+        dispatch({ type: 'BATCH_FINISHED', id: batchId })
+      },
+    })
+  }
+
+  const buildBrief = (): GenerationBrief => ({
+    key,
+    mode,
+    tempo: Math.max(40, Math.min(220, Math.round(tempo))),
+    bars,
+    timeSig: '4/4',
+    concept,
+    text,
+    allowChromatic,
+    texture: lead ? 'lead' : 'poly',
+    includeRhythm,
+    extraInstruments,
+  })
+
+  const generate = (count: number) => {
+    const brief = buildBrief()
     const label = concept.trim() || `${key} ${mode}`
     if (engine === 'instant') {
       // Offline symbolic tier: one deterministic batch, evolved from keepers.
       const keepers = keepersOf(motifs.values())
       queueBatch(count, label, async () => generateSymbolicBatch(brief, count, keepers, randomSeed()))
+      return
+    }
+    if (engine === 'neural') {
+      queueNeuralBatch(count, label, brief)
       return
     }
     // Polyphonic motif JSON is bulky — cap each call at 5 motifs so the
@@ -128,11 +237,24 @@ export function GenerationPanel() {
       queueBatch(5, 'surprise', async () => generateSymbolicSurprise(5, randomSeed()))
       return
     }
+    if (engine === 'neural') {
+      // Free rein, neural style: roll the musical frame, let the model play.
+      const rolled: GenerationBrief = {
+        ...buildBrief(),
+        key: KEYS[Math.floor(Math.random() * KEYS.length)],
+        mode: MODES[Math.floor(Math.random() * MODES.length)],
+        tempo: 70 + Math.floor(Math.random() * 101),
+        bars: [2, 4, 8][Math.floor(Math.random() * 3)],
+      }
+      queueNeuralBatch(5, 'surprise', rolled)
+      return
+    }
     queueBatch(5, 'surprise', () => generateSurpriseBatch(5))
   }
 
   // Formatted explicitly (no CSS uppercasing) so flats keep their lowercase b: "Eb", not "EB".
-  const summary = `${engine === 'instant' ? 'INSTANT · ' : ''}${key} ${mode.toUpperCase()} · ${tempo} BPM · ${bars} BARS · ${lead ? 'LEAD' : 'POLY'}${extraInstruments ? '+XTRA' : ''}${includeRhythm ? '+RHYTHM' : ''}${allowChromatic ? '+CHR' : ''}`
+  const enginePrefix = engine === 'claude' ? '' : `${engine.toUpperCase()} · `
+  const summary = `${enginePrefix}${key} ${mode.toUpperCase()} · ${tempo} BPM · ${bars} BARS · ${lead ? 'LEAD' : 'POLY'}${extraInstruments ? '+XTRA' : ''}${includeRhythm ? '+RHYTHM' : ''}${allowChromatic ? '+CHR' : ''}`
 
   const actions = (compact: boolean) => (
     <>
@@ -251,13 +373,14 @@ export function GenerationPanel() {
               <span className="knob-label">bars</span>
             </div>
           </Tooltip>
-          <Tooltip label="INSTANT: offline rules + evolution of your kept motifs (★3+) — free, immediate, no network. CLAUDE: LLM composer (uses brief text, textures, drums)">
+          <Tooltip label="INSTANT: offline rules + evolution of your kept motifs (★3+) — free, immediate. NEURAL: on-device model (WebGPU, one-time ~226 MB download) — offline, keepers seed continuations. CLAUDE: LLM composer (uses brief text, textures, drums)">
             <div className="gen-ctl">
               <SegmentedControl
                 value={engine}
                 onChange={(v) => setEngine(v as Engine)}
                 data={[
                   { value: 'instant', label: 'INSTANT' },
+                  { value: 'neural', label: 'NEURAL' },
                   { value: 'claude', label: 'CLAUDE' },
                 ]}
               />
@@ -265,6 +388,7 @@ export function GenerationPanel() {
             </div>
           </Tooltip>
         </div>
+        {engine === 'neural' && <NeuralStrip />}
         <div className="gen-divider" />
         <div className="gen-mid">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>

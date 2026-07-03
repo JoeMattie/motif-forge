@@ -64,6 +64,8 @@ function lineageLabel(m: Motif): string {
       return 'WALK'
     case 'ga':
       return m.source.parentIds.length > 1 ? 'EVO CROSS' : 'EVO'
+    case 'neural':
+      return 'NEURAL'
   }
 }
 

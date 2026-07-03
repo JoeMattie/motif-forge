@@ -6,8 +6,17 @@ import { AppProvider } from './store/AppContext'
 import { idbAdapter } from './store/idbAdapter'
 import { theme } from './theme'
 import { useThemePref, useResolvedTheme, useTooltipsEnabled } from './uiPrefs'
+import { initNeural } from './generation/neural/client'
 import '@mantine/core/styles.css'
 import './styles.css'
+
+// Neural tier gate: unsupported / idle / auto-load when already cached.
+void initNeural()
+
+// App-shell offline capability; model bytes live in OPFS, not the SW cache.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  void navigator.serviceWorker.register('/sw.js')
+}
 
 /**
  * Theme root: resolves the Day/Nite/System preference to `:root[data-theme]`
