@@ -35,8 +35,19 @@ export function rootIdOf(motif: Motif, motifs: Map<string, Motif>): string {
   return cursor.id
 }
 
+/**
+ * Result cache keyed on the motifs Map instance — the reducer replaces the
+ * Map on every change, so identity is a correct cache key. Several mounted
+ * components (grid, transport strip, library, concepts) derive families from
+ * the same Map; this makes them share one computation AND one set of Family
+ * object identities, which memoized cards rely on.
+ */
+const familiesCache = new WeakMap<Map<string, Motif>, Family[]>()
+
 /** Group every motif into families, ordered by root createdAt. */
 export function buildFamilies(motifs: Map<string, Motif>): Family[] {
+  const cached = familiesCache.get(motifs)
+  if (cached) return cached
   const byRoot = new Map<string, Motif[]>()
   for (const m of motifs.values()) {
     const rid = rootIdOf(m, motifs)
@@ -56,6 +67,7 @@ export function buildFamilies(motifs: Map<string, Motif>): Family[] {
     families.push({ rootId, root, members, variants, face, bestRating })
   }
   families.sort((a, b) => a.root.createdAt - b.root.createdAt)
+  familiesCache.set(motifs, families)
   return families
 }
 

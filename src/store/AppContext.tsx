@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   type Dispatch,
   type ReactNode,
@@ -14,6 +15,7 @@ import { initialState, reducer, type Action, type AppState } from './appState'
 import type { PersistenceAdapter } from './persistence'
 
 const StateContext = createContext<AppState>(initialState)
+const StateGetterContext = createContext<() => AppState>(() => initialState)
 const DispatchContext = createContext<Dispatch<Action>>(() => {})
 
 export function AppProvider({
@@ -24,6 +26,16 @@ export function AppProvider({
   children: ReactNode
 }) {
   const [state, rawDispatch] = useReducer(reducer, initialState)
+
+  // Stable getter for event handlers that need current state without
+  // subscribing to it (e.g. building PlayOptions on click) — keeps memoized
+  // cards from re-rendering on every state change. Synced post-commit, which
+  // is always before any user event can fire.
+  const stateRef = useRef(state)
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
+  const getState = useCallback(() => stateRef.current, [])
 
   // Write-through persistence: pattern-match persistent actions and mirror
   // them to the adapter fire-and-forget. Keeps the reducer pure.
@@ -47,6 +59,10 @@ export function AppProvider({
           break
         case 'PART_VARIATIONS_DELETED':
           persist(adapter.deletePartVariations(action.ids))
+          break
+        case 'DISCARDED_PURGED':
+          persist(adapter.deleteMotifs(action.motifIds))
+          if (action.variationIds.length > 0) persist(adapter.deletePartVariations(action.variationIds))
           break
         default:
           break
@@ -139,9 +155,11 @@ export function AppProvider({
 
   return (
     <StateContext.Provider value={state}>
-      <DispatchContext.Provider value={dispatchWithMotifWrites}>
-        {children}
-      </DispatchContext.Provider>
+      <StateGetterContext.Provider value={getState}>
+        <DispatchContext.Provider value={dispatchWithMotifWrites}>
+          {children}
+        </DispatchContext.Provider>
+      </StateGetterContext.Provider>
     </StateContext.Provider>
   )
 }
@@ -215,6 +233,15 @@ const pendingMotifWrites = new Set<string>()
 
 export function useAppState(): AppState {
   return useContext(StateContext)
+}
+
+/**
+ * Stable `() => AppState` for reading current state inside event handlers
+ * WITHOUT subscribing to changes. Use in components that only need state when
+ * the user acts, so they can stay memoized across unrelated state changes.
+ */
+export function useAppStateGetter(): () => AppState {
+  return useContext(StateGetterContext)
 }
 
 export function useAppDispatch(): Dispatch<Action> {

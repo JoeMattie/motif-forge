@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { ActionIcon, Badge, Button, Tooltip } from '@mantine/core'
 import { CaretDownIcon, CaretRightIcon, CircleIcon } from '@phosphor-icons/react'
 import type { Motif, Note, PartVariation } from '../../types'
@@ -64,6 +64,12 @@ function NodeCard({
     if (isFocused) ref.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [isFocused])
 
+  // Stable object so the memoized LcdRoll skips re-rendering on focus moves.
+  const lcdMotif = useMemo(
+    () => ({ ...source, id: lcdId, notes: node.notes }),
+    [source, lcdId, node.notes],
+  )
+
   const badge = provenanceLabel(node)
   const badgeCls =
     node.provenance.kind === 'transform' ? 'transform' : isDrums ? 'var-drums' : 'var'
@@ -76,7 +82,7 @@ function NodeCard({
           className={`tree-node mini${isFocused ? ' focused' : ''}${inMix ? ' in-mix' : ''}${ghost ? ' ghost' : ''}`}
           onClick={() => callbacks.onFocus(node.id)}
         >
-          <LcdRoll motif={{ ...source, id: lcdId, notes: node.notes }} height={24} />
+          <LcdRoll motif={lcdMotif} height={24} />
         </div>
       </Tooltip>
     )
@@ -95,7 +101,7 @@ function NodeCard({
         <span className={`node-badge ${badgeCls}`}>{badge}</span>
         {inMix && <CircleIcon size={7} weight="fill" color="var(--accent)" />}
       </div>
-      <LcdRoll motif={{ ...source, id: lcdId, notes: node.notes }} height={lcdHeight} />
+      <LcdRoll motif={lcdMotif} height={lcdHeight} />
       <div className="node-foot">
         <Tooltip label="Put this take in the mix — it plays instead of the original (Enter)">
           <button
@@ -275,6 +281,20 @@ export function PartRow({
   // THE MIX for this part, and the children shrink to tiny boxes that keep
   // their miniature rolls. Nothing disappears; everything stays navigable.
   const mixNotes = selectedTake ? selectedTake.notes : originNotes
+  // Stable motif objects for the memoized LcdRoll (focus moves re-render the
+  // row; the rolls themselves shouldn't rebuild).
+  const collapsedLcdMotif = useMemo(
+    () => ({ ...source, id: mixId, notes: mixNotes }),
+    [source, mixId, mixNotes],
+  )
+  const originLcdMotif = useMemo(
+    () => ({
+      ...source,
+      id: originInMix ? mixId : `origin:${source.id}:${partIndex}`,
+      notes: originNotes,
+    }),
+    [source, originInMix, mixId, partIndex, originNotes],
+  )
 
   return (
     <div className={`module part-row${collapsed ? ' compact' : ''}`}>
@@ -311,7 +331,7 @@ export function PartRow({
           {collapsed ? (
             <>
               {/* the currently selected version — what the mix plays for this part */}
-              <LcdRoll motif={{ ...source, id: mixId, notes: mixNotes }} height={28} />
+              <LcdRoll motif={collapsedLcdMotif} height={28} />
               <Badge
                 size="sm"
                 radius="sm"
@@ -323,14 +343,7 @@ export function PartRow({
             </>
           ) : (
             <>
-              <LcdRoll
-                motif={{
-                  ...source,
-                  id: originInMix ? mixId : `origin:${source.id}:${partIndex}`,
-                  notes: originNotes,
-                }}
-                height={52}
-              />
+              <LcdRoll motif={originLcdMotif} height={52} />
               <div className="node-foot">
                 <Tooltip label="Play the original — clears this part's selected take (Enter)">
                   <button

@@ -1,9 +1,9 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { Motif, Rating } from '../../types'
 import { engine } from '../../audio/engine'
 import { verticalTarget } from '../../core/gridNav'
 import { effectiveTempo } from '../../store/appState'
-import { useAppDispatch, useAppState } from '../../store/AppContext'
+import { useAppDispatch, useAppStateGetter } from '../../store/AppContext'
 
 /**
  * Only text-entry controls count as typing targets. Mantine renders many
@@ -37,6 +37,10 @@ export interface TriageKeyHandlers {
  * 1-5 rates (+advance), x discards (+advance), u restores last discard,
  * f folds out the family tray, m opens the mutation bay.
  * Selection is app state, not DOM focus.
+ *
+ * The listener is registered ONCE per `enabled` — everything it needs is read
+ * at keydown time (props via a latest-ref, app state via the stable getter),
+ * so per-keystroke state changes never tear the listener down and re-add it.
  */
 export function useKeyboardTriage(
   visibleMotifs: Motif[],
@@ -44,9 +48,13 @@ export function useKeyboardTriage(
   enabled: boolean,
   handlers: TriageKeyHandlers = {},
 ): void {
-  const state = useAppState()
+  const getState = useAppStateGetter()
   const dispatch = useAppDispatch()
-  const { onFold, onMutate, onPromote, tray } = handlers
+
+  const latest = useRef({ visibleMotifs, columns, handlers })
+  useEffect(() => {
+    latest.current = { visibleMotifs, columns, handlers }
+  })
 
   useEffect(() => {
     if (!enabled) return
@@ -56,6 +64,9 @@ export function useKeyboardTriage(
       // Modals (e.g. ABOUT) trap focus, so their keys land inside the dialog —
       // don't triage behind them. (The bay's Drawer instead disables `enabled`.)
       if (e.target instanceof HTMLElement && e.target.closest('[role="dialog"]')) return
+      const { visibleMotifs, columns, handlers } = latest.current
+      const { onFold, onMutate, onPromote, tray } = handlers
+      const state = getState()
       if (visibleMotifs.length === 0) return
 
       const playCurrent = (m: Motif) =>
@@ -222,5 +233,5 @@ export function useKeyboardTriage(
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [enabled, visibleMotifs, columns, state, dispatch, onFold, onMutate, onPromote, tray])
+  }, [enabled, getState, dispatch])
 }

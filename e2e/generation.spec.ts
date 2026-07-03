@@ -6,9 +6,9 @@ test('+5 shows a pending card, then lands validated motifs', async ({ page }) =>
   await gotoApp(page)
 
   // INSTANT is the default engine — switch to CLAUDE to exercise the LLM path.
-  await page.getByRole('button', { name: /^generate$/i }).click()
+  await page.locator('.gen-title').click()
   await page.locator('.wb-seg-label', { hasText: 'CLAUDE' }).click()
-  await page.getByRole('button', { name: /^\+ 5$/ }).click()
+  await page.getByRole('button', { name: 'Generate +5' }).click()
 
   // Placeholder pulses in the grid while the batch is in flight, then the
   // two motifs from the mocked response join the three seeds.
@@ -25,9 +25,9 @@ test('invalid motifs in the batch are dropped and reported', async ({ page }) =>
   await gotoApp(page)
 
   // INSTANT is the default engine — switch to CLAUDE to exercise the LLM path.
-  await page.getByRole('button', { name: /^generate$/i }).click()
+  await page.locator('.gen-title').click()
   await page.locator('.wb-seg-label', { hasText: 'CLAUDE' }).click()
-  await page.getByRole('button', { name: /^\+ 5$/ }).click()
+  await page.getByRole('button', { name: 'Generate +5' }).click()
 
   await expect(page.locator('.motif-card')).toHaveCount(4)
   await expect(page.getByRole('button', { name: '1 added, 1 dropped' })).toBeVisible()
@@ -38,10 +38,10 @@ test('generated motifs are tagged to the named concept', async ({ page }) => {
   await gotoApp(page)
 
   // the concept field lives inside the expanded generation module
-  await page.getByRole('button', { name: /^generate$/i }).click()
+  await page.locator('.gen-title').click()
   await page.locator('.wb-seg-label', { hasText: 'CLAUDE' }).click()
   await page.getByPlaceholder(/concept — e\.g\./).fill('event horizon')
-  await page.getByRole('button', { name: /^\+ 5$/ }).click()
+  await page.getByRole('button', { name: 'Generate +5' }).click()
   await expect(page.locator('.card-name', { hasText: 'Motif Of Concept' })).toBeVisible()
 
   // The concepts view groups by tag
@@ -55,9 +55,9 @@ test('an API failure surfaces a message and clears the pending card', async ({ p
   await gotoApp(page)
 
   // INSTANT is the default engine — switch to CLAUDE to exercise the LLM path.
-  await page.getByRole('button', { name: /^generate$/i }).click()
+  await page.locator('.gen-title').click()
   await page.locator('.wb-seg-label', { hasText: 'CLAUDE' }).click()
-  await page.getByRole('button', { name: /^\+ 5$/ }).click()
+  await page.getByRole('button', { name: 'Generate +5' }).click()
 
   await expect(page.getByRole('button', { name: /Generation failed/ })).toBeVisible()
   await expect(page.locator('.pending-card')).toHaveCount(0)
@@ -67,9 +67,9 @@ test('an API failure surfaces a message and clears the pending card', async ({ p
 test('generated cards surface metadata and LCD notes', async ({ page }) => {
   await mockGeneration(page, [mockMotif('Mock Alpha')])
   await gotoApp(page)
-  await page.getByRole('button', { name: /^generate$/i }).click()
+  await page.locator('.gen-title').click()
   await page.locator('.wb-seg-label', { hasText: 'CLAUDE' }).click()
-  await page.getByRole('button', { name: /^\+ 5$/ }).click()
+  await page.getByRole('button', { name: 'Generate +5' }).click()
 
   const card = page.locator('.motif-card', { hasText: 'Mock Alpha' })
   await expect(card.locator('.card-meta')).toHaveText('4B · 100')

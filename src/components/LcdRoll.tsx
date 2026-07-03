@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { Motif } from '../types'
 import { beatsPerBar, isInScale } from '../core/theory'
 import { usePlayhead } from './hooks/usePlayhead'
@@ -29,8 +30,11 @@ const DRUM_LANE = 2.4 // pitch-units reserved at the bottom for drum ticks
  * Melodic parts map pitch → y; drum-part notes draw as short ticks on a
  * bottom lane. Velocity maps to opacity (~0.55–1). The playhead is a 2px
  * orange sweep driven by one rAF loop outside React.
+ *
+ * Memoized: the roll rebuilds its whole SVG on render, and dozens are mounted
+ * at once — grid renders (selection moves, filter clicks) must not touch them.
  */
-export function LcdRoll({
+export const LcdRoll = memo(function LcdRoll({
   motif,
   height = 88,
   deep,
@@ -45,15 +49,21 @@ export function LcdRoll({
   const bpb = beatsPerBar(motif.timeSig)
   const totalBeats = motif.bars * bpb
 
+  const drumParts = motif.parts.map((p) => p.instrument === 'drums')
   const isDrum = (part: number | undefined) =>
-    motif.parts.length > 0 &&
-    motif.parts[Math.min(part ?? 0, motif.parts.length - 1)].instrument === 'drums'
+    drumParts.length > 0 && drumParts[Math.min(part ?? 0, drumParts.length - 1)]
 
   const melodic = motif.notes.filter((n) => !isDrum(n.part))
   const hasDrums = melodic.length < motif.notes.length
-  const pitches = (melodic.length > 0 ? melodic : motif.notes).map((n) => n.pitch)
-  let lo = Math.min(...pitches) - PAD
-  let hi = Math.max(...pitches) + PAD
+  const spanNotes = melodic.length > 0 ? melodic : motif.notes
+  let lo = Number.POSITIVE_INFINITY
+  let hi = Number.NEGATIVE_INFINITY
+  for (const n of spanNotes) {
+    if (n.pitch < lo) lo = n.pitch
+    if (n.pitch > hi) hi = n.pitch
+  }
+  lo -= PAD
+  hi += PAD
   if (minSpan !== undefined && hi - lo < minSpan) {
     const extra = (minSpan - (hi - lo)) / 2
     lo -= extra
@@ -133,4 +143,4 @@ export function LcdRoll({
       </svg>
     </div>
   )
-}
+})

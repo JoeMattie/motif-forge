@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { ActionIcon, Button, Mark, Tooltip } from '@mantine/core'
 import {
   ArrowRightIcon,
@@ -34,15 +34,16 @@ function TrayCard({ motif, family, isOrigin }: { motif: Motif; family: Family; i
     if (selected) cardRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [selected])
 
-  // Unvaried parts render dimmed so the varied part pops.
-  const dimParts = (() => {
+  // Unvaried parts render dimmed so the varied part pops. Memoized so the
+  // Set identity stays stable and the memoized LcdRoll can skip re-renders.
+  const dimParts = useMemo(() => {
     const s = motif.source
     const variedParts =
       s.kind === 'llm-mutation' || s.kind === 'bay-mix' ? s.variedParts : undefined
     if (!variedParts?.length) return undefined
     const varied = new Set(variedParts)
     return new Set(motif.parts.map((_, i) => i).filter((i) => !varied.has(i)))
-  })()
+  }, [motif])
 
   const badgeCls =
     badge.kind === 'transform'

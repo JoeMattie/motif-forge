@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Button, NumberInput, Select, Textarea, Tooltip } from '@mantine/core'
 import { CaretRightIcon } from '@phosphor-icons/react'
 import type { Mode, Motif, Note } from '../../types'
@@ -40,7 +40,12 @@ export function AdvancedPanel({
   const [targetMode, setTargetMode] = useState<Mode>(
     source.mode === 'dorian' ? 'phrygian' : 'dorian',
   )
-  const [selectedNotes, setSelectedNotes] = useState<Set<number>>(new Set())
+  const [selectedNotes, setSelectedNotes] = useState<Set<number>>(() => new Set())
+
+  const lcdMotif = useMemo(
+    () => ({ ...source, id: `adv:${source.id}:${partIndex}`, notes: baseTake }),
+    [source, partIndex, baseTake],
+  )
 
   const toggleNote = (i: number) =>
     setSelectedNotes((prev) => {
@@ -63,12 +68,7 @@ export function AdvancedPanel({
         <span className="micro-head">Advanced — branches from {focusLabel}</span>
         <span className="micro-dim">transforms are instant · brief runs 5 LLM takes</span>
       </div>
-      <LcdRoll
-        motif={{ ...source, id: `adv:${source.id}:${partIndex}`, notes: baseTake }}
-        height={84}
-        selectedNotes={selectedNotes}
-        onToggleNote={toggleNote}
-      />
+      <LcdRoll motif={lcdMotif} height={84} selectedNotes={selectedNotes} onToggleNote={toggleNote} />
       <div className="transform-aux">
         <Tooltip label={pitchTip ?? 'Flip the contour upside down around the first note'}>
           <Button disabled={isDrums} onClick={() => apply({ type: 'inversion' })}>

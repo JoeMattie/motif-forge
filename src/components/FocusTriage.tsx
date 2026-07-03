@@ -20,7 +20,6 @@ import { useAppDispatch, useAppState } from '../store/AppContext'
 import { useIsLoading, useIsPlaying } from './hooks/usePlayhead'
 import { usePlayOptions } from './hooks/usePlayOptions'
 import { useKeyboardTriage } from './hooks/useKeyboardTriage'
-import { GenerationPanel } from './GenerationPanel'
 import { LcdRoll } from './LcdRoll'
 import { PlayRound } from './hw/PlayRound'
 
@@ -99,19 +98,13 @@ export function FocusTriage() {
   const queue = active.slice(qStart, qStart + 6)
 
   if (!face || !current) {
-    return (
-      <>
-        <GenerationPanel />
-        <div className="empty-note">Nothing to triage — generate a batch above.</div>
-      </>
-    )
+    return <div className="empty-note">Nothing to triage — generate a batch above.</div>
   }
 
   const tempo = effectiveTempo(state.transport, face)
 
   return (
     <>
-      <GenerationPanel />
       <div className="focus-row">
         <div className="focus-lcd">
           <div className="focus-lcd-head">

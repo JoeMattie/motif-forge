@@ -173,7 +173,10 @@ export function ConceptView() {
   const state = useAppState()
   const dispatch = useAppDispatch()
   const playOpts = usePlayOptions()
-  const concepts = [...state.concepts.values()].sort((a, b) => a.createdAt - b.createdAt)
+  const concepts = useMemo(
+    () => [...state.concepts.values()].sort((a, b) => a.createdAt - b.createdAt),
+    [state.concepts],
+  )
   const [conceptId, setConceptId] = useState<string | null>(concepts[0]?.id ?? null)
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
@@ -188,8 +191,17 @@ export function ConceptView() {
     return used
   }, [state.motifs])
 
-  const countFor = (id: string) =>
-    families.filter((f) => !f.root.discarded && f.members.some((m) => m.conceptId === id)).length
+  // Family count per concept, in one pass instead of a filter per tab.
+  const familyCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const f of families) {
+      if (f.root.discarded) continue
+      const tagged = new Set<string>()
+      for (const m of f.members) if (m.conceptId) tagged.add(m.conceptId)
+      for (const id of tagged) counts.set(id, (counts.get(id) ?? 0) + 1)
+    }
+    return counts
+  }, [families])
 
   const groups = useMemo(
     () =>
@@ -272,7 +284,7 @@ export function ConceptView() {
           <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
             <Button data-latched={conceptId === c.id} onClick={() => setConceptId(c.id)}>
               <span>
-                {c.name} · {countFor(c.id)}
+                {c.name} · {familyCounts.get(c.id) ?? 0}
               </span>
             </Button>
             {!usedConceptIds.has(c.id) && (

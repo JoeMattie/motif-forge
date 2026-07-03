@@ -3,6 +3,7 @@ import { Center, Drawer, Group, Loader, Text } from '@mantine/core'
 import { engine } from './audio/engine'
 import { useAppDispatch, useAppState } from './store/AppContext'
 import { SAMPLE_MOTIFS } from './core/sampleMotifs'
+import { GenerationPanel } from './components/GenerationPanel'
 import { Header } from './components/Header'
 import { TransportStrip } from './components/TransportStrip'
 import { TriageGrid } from './components/TriageGrid'
@@ -49,6 +50,13 @@ export function App() {
       <Header />
       <main>
         <div className="view">
+          {/* Mounted once for the app's lifetime (hidden outside triage) so the
+              brief, knob settings, and run progress survive Grid↔Focus toggles
+              and view switches. display:contents keeps the panel a layout child
+              of the .view scroller, which its sticky dock depends on. */}
+          <div style={{ display: state.view === 'triage' ? 'contents' : 'none' }}>
+            <GenerationPanel />
+          </div>
           {state.view === 'triage' ? (
             state.triageMode === 'grid' ? (
               <TriageGrid />

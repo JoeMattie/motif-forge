@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { memo, useEffect, useRef } from 'react'
 import { Button, Kbd, Mark, Tooltip } from '@mantine/core'
 import { CaretDownIcon, CaretRightIcon } from '@phosphor-icons/react'
-import type { Part, Rating as RatingValue } from '../types'
+import type { Motif, Part, Rating as RatingValue } from '../types'
 import type { Family } from '../core/families'
 import { engine } from '../audio/engine'
 import { useAppDispatch } from '../store/AppContext'
@@ -29,7 +29,9 @@ interface MotifCardProps {
   selected: boolean
   /** Family tray currently folded out under this card. */
   expanded?: boolean
-  onToggleExpand?: () => void
+  /** Receives the family's face so parents can pass one stable callback for
+   * every card (memo depends on it). */
+  onToggleExpand?: (face: Motif) => void
   /** Extra footer row with the concept select + exports (Library). */
   conceptRow?: React.ReactNode
 }
@@ -38,8 +40,17 @@ interface MotifCardProps {
  * One triage-grid card = one FAMILY. Shows the family's face (promoted take
  * or origin); variants stay inside the fold-out tray. The stack lip on the
  * top edge is the only grid trace of a family with variants.
+ *
+ * Memoized: the triage grid re-renders on every selection move — only the two
+ * cards whose `selected` flag flips should actually render.
  */
-export function MotifCard({ family, selected, expanded, onToggleExpand, conceptRow }: MotifCardProps) {
+export const MotifCard = memo(function MotifCard({
+  family,
+  selected,
+  expanded,
+  onToggleExpand,
+  conceptRow,
+}: MotifCardProps) {
   const dispatch = useAppDispatch()
   const playOpts = usePlayOptions()
   const face = family.face
@@ -69,7 +80,7 @@ export function MotifCard({ family, selected, expanded, onToggleExpand, conceptR
       onClick={() => {
         dispatch({ type: 'SELECT', id: face.id })
         // Clicking a card that has variants folds its tray out (chip/F toggles it back in).
-        if (family.variants.length > 0 && onToggleExpand && !expanded) onToggleExpand()
+        if (family.variants.length > 0 && onToggleExpand && !expanded) onToggleExpand(face)
       }}
     >
       {family.variants.length > 0 && !expanded && <span className="stack-lip" />}
@@ -144,7 +155,7 @@ export function MotifCard({ family, selected, expanded, onToggleExpand, conceptR
                 data-latched={expanded ?? false}
                 onClick={(e) => {
                   e.stopPropagation()
-                  onToggleExpand()
+                  onToggleExpand(face)
                 }}
                 rightSection={
                   expanded ? (
@@ -165,4 +176,4 @@ export function MotifCard({ family, selected, expanded, onToggleExpand, conceptR
       {conceptRow}
     </div>
   )
-}
+})

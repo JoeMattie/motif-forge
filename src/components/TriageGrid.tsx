@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Button, Kbd, Mark, Tooltip } from '@mantine/core'
 import type { Motif } from '../types'
+import { engine } from '../audio/engine'
 import { buildFamilies, rootIdOf } from '../core/families'
-import { useAppDispatch, useAppState } from '../store/AppContext'
+import { useAppDispatch, useAppState, useAppStateGetter } from '../store/AppContext'
 import { useGridColumns } from './hooks/useGridColumns'
 import { useKeyboardTriage } from './hooks/useKeyboardTriage'
-import { GenerationPanel } from './GenerationPanel'
 import { MotifCard } from './MotifCard'
 import { FamilyTray } from './FamilyTray'
 
@@ -20,8 +20,10 @@ const FILTER_HINTS: Record<Filter, string> = {
 
 export function TriageGrid() {
   const state = useAppState()
+  const getState = useAppStateGetter()
   const dispatch = useAppDispatch()
   const [filter, setFilter] = useState<Filter>('all')
+  const [purgeArmed, setPurgeArmed] = useState(false)
   const { gridRef, columns } = useGridColumns()
 
   const families = useMemo(() => buildFamilies(state.motifs), [state.motifs])
@@ -41,12 +43,15 @@ export function TriageGrid() {
 
   const faces = useMemo(() => visible.map((f) => f.face), [visible])
 
+  // Built on the state getter so they're referentially stable — memoized
+  // cards receive the same callback across selection moves and fold toggles.
   const toggleFold = useCallback(
     (m: Motif) => {
-      const rid = rootIdOf(m, state.motifs)
-      dispatch({ type: 'SET_EXPANDED_FAMILY', id: state.expandedFamilyId === rid ? null : rid })
+      const { motifs, expandedFamilyId } = getState()
+      const rid = rootIdOf(m, motifs)
+      dispatch({ type: 'SET_EXPANDED_FAMILY', id: expandedFamilyId === rid ? null : rid })
     },
-    [dispatch, state.motifs, state.expandedFamilyId],
+    [dispatch, getState],
   )
   const openBay = useCallback(
     (m: Motif) => dispatch({ type: 'SET_MUTATION_TARGET', id: m.id }),
@@ -54,13 +59,32 @@ export function TriageGrid() {
   )
   const promote = useCallback(
     (m: Motif) => {
-      const fam = families.find((f) => f.rootId === rootIdOf(m, state.motifs))
+      const { motifs } = getState()
+      const fam = buildFamilies(motifs).find((f) => f.rootId === rootIdOf(m, motifs))
       if (fam) {
         dispatch({ type: 'MOTIF_PROMOTED', id: m.id, familyIds: fam.members.map((x) => x.id) })
       }
     },
-    [families, state.motifs, dispatch],
+    [dispatch, getState],
   )
+
+  // Hard-delete every discarded family (all members ride along — an orphaned
+  // variant would otherwise resurface as its own root) plus their bay trees.
+  const purgeDiscarded = useCallback(() => {
+    const { motifs, partVariations } = getState()
+    const motifIds = buildFamilies(motifs)
+      .filter((f) => f.root.discarded)
+      .flatMap((f) => f.members.map((m) => m.id))
+    if (motifIds.length === 0) return
+    const gone = new Set(motifIds)
+    const playing = engine.getSnapshot().playingMotifId
+    if (playing && gone.has(playing.split('::')[0])) engine.stop()
+    const variationIds = [...partVariations.values()]
+      .filter((v) => gone.has(v.sourceMotifId))
+      .map((v) => v.id)
+    dispatch({ type: 'DISCARDED_PURGED', motifIds, variationIds })
+    setPurgeArmed(false)
+  }, [dispatch, getState])
 
   const expandedFamily = useMemo(
     () => families.find((f) => f.rootId === state.expandedFamilyId),
@@ -76,15 +100,18 @@ export function TriageGrid() {
       : undefined,
   })
 
-  const counts = useMemo(
-    () => ({
-      all: families.filter((f) => !f.root.discarded).length,
-      unrated: families.filter((f) => !f.root.discarded && f.face.rating === 0).length,
-      rated: families.filter((f) => !f.root.discarded && f.face.rating > 0).length,
-      discarded: families.filter((f) => f.root.discarded).length,
-    }),
-    [families],
-  )
+  const counts = useMemo(() => {
+    const c = { all: 0, unrated: 0, rated: 0, discarded: 0 }
+    for (const f of families) {
+      if (f.root.discarded) c.discarded++
+      else {
+        c.all++
+        if (f.face.rating > 0) c.rated++
+        else c.unrated++
+      }
+    }
+    return c
+  }, [families])
 
   // The fold-out tray spans the full grid width directly under the expanded
   // card's row — insert it after the last card of that row.
@@ -100,7 +127,7 @@ export function TriageGrid() {
         family={f}
         selected={f.face.id === state.selectedId}
         expanded={f.rootId === state.expandedFamilyId}
-        onToggleExpand={() => toggleFold(f.face)}
+        onToggleExpand={toggleFold}
       />,
     )
     if (i + 1 === trayAfter) {
@@ -116,17 +143,35 @@ export function TriageGrid() {
 
   return (
     <>
-      <GenerationPanel />
       <div className="filter-row">
         {(['all', 'unrated', 'rated', 'discarded'] as Filter[]).map((f) => (
           <Tooltip key={f} label={FILTER_HINTS[f]}>
-            <Button data-latched={filter === f} onClick={() => setFilter(f)}>
+            <Button
+              data-latched={filter === f}
+              onClick={() => {
+                setFilter(f)
+                setPurgeArmed(false)
+              }}
+            >
               <span>
                 {f} {counts[f]}
               </span>
             </Button>
           </Tooltip>
         ))}
+        {filter === 'discarded' && counts.discarded > 0 && (
+          <Tooltip label="Permanently delete every discarded family — motifs, variants, and their bay takes — from the library database. Cannot be undone">
+            <Button
+              className="danger-text"
+              data-danger={purgeArmed}
+              onClick={() => (purgeArmed ? purgeDiscarded() : setPurgeArmed(true))}
+            >
+              {purgeArmed
+                ? `Clear ${counts.discarded} ${counts.discarded === 1 ? 'family' : 'families'} — sure?`
+                : 'Clear from disk'}
+            </Button>
+          </Tooltip>
+        )}
         <Tooltip label="Mutating never adds cards to the grid — variants land inside each family's fold-out tray">
           <span className="note-chip">Counts = families · variants stay inside</span>
         </Tooltip>

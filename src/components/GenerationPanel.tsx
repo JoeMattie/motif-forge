@@ -164,7 +164,9 @@ export function GenerationPanel() {
   const dockRef = useRef<HTMLElement | null>(null)
   const [stuck, setStuck] = useState(false)
   useEffect(() => {
-    const scroller = dockRef.current?.parentElement
+    // The panel sits inside a display:contents keep-alive wrapper (App.tsx),
+    // so walk up to the scrolling .view container rather than parentElement.
+    const scroller = dockRef.current?.closest('.view')
     if (!scroller) return
     const onScroll = () => setStuck(scroller.scrollTop > 2)
     onScroll()
@@ -243,7 +245,7 @@ export function GenerationPanel() {
     let added = 0
     let dropped = 0
     let chromatic = 0
-    reportStep(batchId, 'tokenizing prompt rows — starting the WebGPU sampler')
+    reportStep(batchId, 'queued for the WebGPU sampler (batches run one at a time)')
     requestNeuralBatch({
       brief,
       n: count,

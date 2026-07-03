@@ -105,7 +105,7 @@ export function MutationBay({ source }: { source: Motif }) {
   const [focus, setFocus] = useState<BayFocus>({ part: 0, nodeId: null })
   const [advanced, setAdvanced] = useState<BayFocus | null>(null)
   const [showHidden, setShowHidden] = useState(false)
-  const [collapsedParts, setCollapsedParts] = useState<Set<number>>(new Set())
+  const [collapsedParts, setCollapsedParts] = useState<Set<number>>(() => new Set())
   const [pending, setPending] = useState<PendingBatch[]>([])
   const [message, setMessage] = useState<string | null>(null)
   const [pruneArmed, setPruneArmed] = useState(false)
@@ -313,113 +313,121 @@ export function MutationBay({ source }: { source: Motif }) {
     dispatch({ type: 'SET_MUTATION_TARGET', id: null })
   }
 
+  type FindResult = { parent: string | null; siblings: PartTreeNode[]; node: PartTreeNode }
+  const findPath = (
+    nodes: PartTreeNode[],
+    id: string,
+    parent: string | null,
+  ): FindResult | null => {
+    for (const n of nodes) {
+      if (n.variation.id === id) return { parent, siblings: nodes, node: n }
+      const r = findPath(n.children, id, n.variation.id)
+      if (r) return r
+    }
+    return null
+  }
+  const vis = (ns: PartTreeNode[]) => ns.filter((n) => showHidden || !n.variation.hidden)
+
+  const moveFocus = (dir: 'up' | 'down' | 'left' | 'right') => {
+    const { part, nodeId } = effFocus
+    // Arrows match the layout: mutations sit side by side, children hang
+    // below their parent. Down descends into the children row, Up climbs
+    // back to the parent (origin at the root generation).
+    if (dir === 'down') {
+      const targets =
+        nodeId === null
+          ? vis(trees[part] ?? [])
+          : vis(findPath(trees[part] ?? [], nodeId, null)?.node.children ?? [])
+      if (targets[0]) focusNode(part, targets[0].variation.id)
+      return
+    }
+    if (dir === 'up') {
+      if (nodeId !== null) {
+        focusNode(part, findPath(trees[part] ?? [], nodeId, null)?.parent ?? null)
+      }
+      return
+    }
+    // Right/Left walk EVERY visible take of a row in visual (depth-first)
+    // order — only past the last one does the cursor cross to the next
+    // instrument. Collapsed rows keep their takes navigable (mini boxes).
+    const delta = dir === 'right' ? 1 : -1
+    const dfs = (ns: PartTreeNode[]): string[] =>
+      vis(ns).flatMap((n) => [n.variation.id, ...dfs(n.children)])
+    const seq: BayFocus[] = []
+    for (let p = 0; p < partCount; p++) {
+      seq.push({ part: p, nodeId: null })
+      for (const id of dfs(trees[p] ?? [])) seq.push({ part: p, nodeId: id })
+    }
+    const idx = seq.findIndex((f) => f.part === part && f.nodeId === nodeId)
+    const ni = idx + delta
+    if (idx >= 0 && ni >= 0 && ni < seq.length) focusNode(seq[ni].part, seq[ni].nodeId)
+  }
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return
+    if (e.key === 'Escape') {
+      // ESC walks out: text field → advanced panel → the bay itself
+      if (isTypingTarget(e.target)) {
+        ;(e.target as HTMLElement).blur()
+        return
+      }
+      if (advanced) {
+        setAdvanced(null)
+        return
+      }
+      closeBay()
+      return
+    }
+    if (isTypingTarget(e.target)) return
+    const focusedNode = effFocus.nodeId
+      ? (state.partVariations.get(effFocus.nodeId) ?? null)
+      : null
+    switch (e.key) {
+      case ' ':
+        e.preventDefault()
+        toggleMix()
+        break
+      case 'ArrowUp':
+      case 'ArrowDown':
+      case 'ArrowLeft':
+      case 'ArrowRight':
+        e.preventDefault()
+        moveFocus(e.key.slice(5).toLowerCase() as 'up' | 'down' | 'left' | 'right')
+        break
+      case 'Enter':
+        e.preventDefault()
+        applySelection(effFocus.part, focusedNode)
+        break
+      case 'm':
+        mutateDefault(effFocus.part, focusedNode)
+        break
+      case 'a':
+        setAdvanced((a) =>
+          a?.part === effFocus.part ? null : { part: effFocus.part, nodeId: effFocus.nodeId },
+        )
+        break
+      case 'c':
+        toggleCollapse(effFocus.part)
+        break
+      case 'p':
+        promote()
+        break
+      default:
+        break
+    }
+  }
+  // The handler closes over fresh state every render; route the window
+  // listener through a ref so it's attached exactly once instead of being
+  // torn down and re-added on every render.
+  const keydownRef = useRef(onKeyDown)
   useEffect(() => {
-    type FindResult = { parent: string | null; siblings: PartTreeNode[]; node: PartTreeNode }
-    const findPath = (
-      nodes: PartTreeNode[],
-      id: string,
-      parent: string | null,
-    ): FindResult | null => {
-      for (const n of nodes) {
-        if (n.variation.id === id) return { parent, siblings: nodes, node: n }
-        const r = findPath(n.children, id, n.variation.id)
-        if (r) return r
-      }
-      return null
-    }
-    const vis = (ns: PartTreeNode[]) => ns.filter((n) => showHidden || !n.variation.hidden)
-
-    const moveFocus = (dir: 'up' | 'down' | 'left' | 'right') => {
-      const { part, nodeId } = effFocus
-      // Arrows match the layout: mutations sit side by side, children hang
-      // below their parent. Down descends into the children row, Up climbs
-      // back to the parent (origin at the root generation).
-      if (dir === 'down') {
-        const targets =
-          nodeId === null
-            ? vis(trees[part] ?? [])
-            : vis(findPath(trees[part] ?? [], nodeId, null)?.node.children ?? [])
-        if (targets[0]) focusNode(part, targets[0].variation.id)
-        return
-      }
-      if (dir === 'up') {
-        if (nodeId !== null) {
-          focusNode(part, findPath(trees[part] ?? [], nodeId, null)?.parent ?? null)
-        }
-        return
-      }
-      // Right/Left walk EVERY visible take of a row in visual (depth-first)
-      // order — only past the last one does the cursor cross to the next
-      // instrument. Collapsed rows keep their takes navigable (mini boxes).
-      const delta = dir === 'right' ? 1 : -1
-      const dfs = (ns: PartTreeNode[]): string[] =>
-        vis(ns).flatMap((n) => [n.variation.id, ...dfs(n.children)])
-      const seq: BayFocus[] = []
-      for (let p = 0; p < partCount; p++) {
-        seq.push({ part: p, nodeId: null })
-        for (const id of dfs(trees[p] ?? [])) seq.push({ part: p, nodeId: id })
-      }
-      const idx = seq.findIndex((f) => f.part === part && f.nodeId === nodeId)
-      const ni = idx + delta
-      if (idx >= 0 && ni >= 0 && ni < seq.length) focusNode(seq[ni].part, seq[ni].nodeId)
-    }
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return
-      if (e.key === 'Escape') {
-        // ESC walks out: text field → advanced panel → the bay itself
-        if (isTypingTarget(e.target)) {
-          ;(e.target as HTMLElement).blur()
-          return
-        }
-        if (advanced) {
-          setAdvanced(null)
-          return
-        }
-        closeBay()
-        return
-      }
-      if (isTypingTarget(e.target)) return
-      const focusedNode = effFocus.nodeId
-        ? (state.partVariations.get(effFocus.nodeId) ?? null)
-        : null
-      switch (e.key) {
-        case ' ':
-          e.preventDefault()
-          toggleMix()
-          break
-        case 'ArrowUp':
-        case 'ArrowDown':
-        case 'ArrowLeft':
-        case 'ArrowRight':
-          e.preventDefault()
-          moveFocus(e.key.slice(5).toLowerCase() as 'up' | 'down' | 'left' | 'right')
-          break
-        case 'Enter':
-          e.preventDefault()
-          applySelection(effFocus.part, focusedNode)
-          break
-        case 'm':
-          mutateDefault(effFocus.part, focusedNode)
-          break
-        case 'a':
-          setAdvanced((a) =>
-            a?.part === effFocus.part ? null : { part: effFocus.part, nodeId: effFocus.nodeId },
-          )
-          break
-        case 'c':
-          toggleCollapse(effFocus.part)
-          break
-        case 'p':
-          promote()
-          break
-        default:
-          break
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    keydownRef.current = onKeyDown
   })
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => keydownRef.current(e)
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   // ---- render ----
 

@@ -1,14 +1,15 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Button, Menu, Select, TextInput, Tooltip } from '@mantine/core'
 import { CaretDownIcon, PlusIcon, StarIcon } from '@phosphor-icons/react'
+import type { Motif } from '../types'
 import type { Family } from '../core/families'
-import { buildFamilies } from '../core/families'
+import { buildFamilies, rootIdOf } from '../core/families'
 import { effectiveTempo } from '../store/appState'
 import { motifToMidi, midiFilename } from '../core/midi'
 import { audioBufferToWavBlob } from '../core/wav'
 import { downloadBlob } from '../core/downloads'
 import { renderMotif } from '../audio/renderOffline'
-import { useAppDispatch, useAppState } from '../store/AppContext'
+import { useAppDispatch, useAppState, useAppStateGetter } from '../store/AppContext'
 import { newId } from '../core/ids'
 import { useGridColumns } from './hooks/useGridColumns'
 import { MotifCard } from './MotifCard'
@@ -50,6 +51,7 @@ function ConceptChip({ family }: { family: Family }) {
 
 export function LibraryView() {
   const state = useAppState()
+  const getState = useAppStateGetter()
   const dispatch = useAppDispatch()
   const [minRating, setMinRating] = useState(3)
   const [conceptFilter, setConceptFilter] = useState<string>('')
@@ -67,6 +69,15 @@ export function LibraryView() {
     [families, minRating, conceptFilter],
   )
   const variantsInside = kept.reduce((sum, f) => sum + f.variants.length, 0)
+
+  const toggleFold = useCallback(
+    (m: Motif) => {
+      const { motifs, expandedFamilyId } = getState()
+      const rid = rootIdOf(m, motifs)
+      dispatch({ type: 'SET_EXPANDED_FAMILY', id: expandedFamilyId === rid ? null : rid })
+    },
+    [dispatch, getState],
+  )
 
   const createConcept = () => {
     const name = newConcept.trim()
@@ -138,12 +149,7 @@ export function LibraryView() {
         family={f}
         selected={f.face.id === state.selectedId}
         expanded={f.rootId === state.expandedFamilyId}
-        onToggleExpand={() =>
-          dispatch({
-            type: 'SET_EXPANDED_FAMILY',
-            id: state.expandedFamilyId === f.rootId ? null : f.rootId,
-          })
-        }
+        onToggleExpand={toggleFold}
         conceptRow={exportRow(f)}
       />,
     )

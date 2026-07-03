@@ -7,9 +7,9 @@ test('INSTANT engine generates a batch with the LLM route dead', async ({ page }
   await page.route('**/api/anthropic/**', (route) => route.abort())
   await gotoApp(page)
 
-  await page.getByRole('button', { name: /^generate$/i }).click()
+  await page.locator('.gen-title').click()
   await page.locator('.wb-seg-label', { hasText: 'INSTANT' }).click()
-  await page.getByRole('button', { name: /^\+ 5$/ }).click()
+  await page.getByRole('button', { name: 'Generate +5' }).click()
 
   // 3 seeds + 5 symbolic candidates, no failure toast.
   await expect(page.locator('.motif-card')).toHaveCount(8)

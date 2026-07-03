@@ -64,7 +64,7 @@ test('triage keys are ignored while typing in a text field', async ({ page }) =>
   await gotoApp(page)
   await expect(selectedName(page)).toHaveText(SEED_NAMES[0])
   // the concept field lives inside the expanded generation module
-  await page.getByRole('button', { name: /^generate$/i }).click()
+  await page.locator('.gen-title').click()
   const concept = page.getByPlaceholder(/concept — e\.g\./)
   await concept.click()
   await concept.pressSequentially('3x')
