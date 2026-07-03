@@ -42,6 +42,13 @@ export type MotifSource =
   /** Promoted from the mutation bay: per-part selected variations mixed into one take.
    * variedParts: indices of the parts whose selection deviates from the parent. */
   | { kind: 'bay-mix'; parentId: string; variedParts: number[] }
+  /** Tier-1 offline generation: fresh constrained-random-walk motif (no parents).
+   * recipe = "contour/rhythm" descriptor; seed reproduces the exact motif. */
+  | { kind: 'symbolic'; batchId: string; seed: number; recipe: string }
+  /** Tier-1 genetic child of user-kept motifs: 1 parentId = mutant, 2 = crossover.
+   * Children start their own family (they're fresh triage candidates); ancestry
+   * stays queryable via parentIds. */
+  | { kind: 'ga'; batchId: string; seed: number; op: string; parentIds: string[] }
 
 export type Rating = 0 | 1 | 2 | 3 | 4 | 5
 

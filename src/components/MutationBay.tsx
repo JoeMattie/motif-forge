@@ -60,6 +60,10 @@ function lineageLabel(m: Motif): string {
       return 'LLM VAR'
     case 'bay-mix':
       return 'MIX'
+    case 'symbolic':
+      return 'WALK'
+    case 'ga':
+      return m.source.parentIds.length > 1 ? 'EVO CROSS' : 'EVO'
   }
 }
 

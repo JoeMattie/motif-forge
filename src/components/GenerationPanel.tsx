@@ -12,6 +12,12 @@ import { CaretDownIcon, CaretRightIcon, DiceFiveIcon } from '@phosphor-icons/rea
 import type { GenerationBrief, Mode } from '../types'
 import { MODES } from '../core/theory'
 import { generateBatch, generateSurpriseBatch } from '../api/generate'
+import {
+  generateSymbolicBatch,
+  generateSymbolicSurprise,
+  keepersOf,
+  randomSeed,
+} from '../generation/symbolic'
 import { enqueue } from '../api/queue'
 import type { ValidationResult } from '../core/validate'
 import { useAppDispatch, useAppState } from '../store/AppContext'
@@ -36,10 +42,15 @@ const MODE_SHORT: Record<Mode, string> = {
 const atPosition = <T,>(list: readonly T[], position: number): T =>
   list[Math.max(0, Math.min(list.length - 1, Math.round(position * (list.length - 1))))]
 
+type Engine = 'instant' | 'claude'
+
 export function GenerationPanel() {
-  const { concepts } = useAppState()
+  const { concepts, motifs } = useAppState()
   const dispatch = useAppDispatch()
   const [open, setOpen] = useState(false)
+  // Tier-1 offline source vs the LLM. Claude stays the default until the
+  // neural tier lands (spec Phase 6 flips this to 'instant').
+  const [engine, setEngine] = useState<Engine>('claude')
   const [key, setKey] = useState('D')
   const [mode, setMode] = useState<Mode>('dorian')
   const [tempo, setTempo] = useState(100)
@@ -97,6 +108,12 @@ export function GenerationPanel() {
       extraInstruments,
     }
     const label = concept.trim() || `${key} ${mode}`
+    if (engine === 'instant') {
+      // Offline symbolic tier: one deterministic batch, evolved from keepers.
+      const keepers = keepersOf(motifs.values())
+      queueBatch(count, label, async () => generateSymbolicBatch(brief, count, keepers, randomSeed()))
+      return
+    }
     // Polyphonic motif JSON is bulky — cap each call at 5 motifs so the
     // response fits max_tokens; the queue runs chunks concurrently.
     const chunks: number[] = []
@@ -107,11 +124,15 @@ export function GenerationPanel() {
   }
 
   const surprise = () => {
+    if (engine === 'instant') {
+      queueBatch(5, 'surprise', async () => generateSymbolicSurprise(5, randomSeed()))
+      return
+    }
     queueBatch(5, 'surprise', () => generateSurpriseBatch(5))
   }
 
   // Formatted explicitly (no CSS uppercasing) so flats keep their lowercase b: "Eb", not "EB".
-  const summary = `${key} ${mode.toUpperCase()} · ${tempo} BPM · ${bars} BARS · ${lead ? 'LEAD' : 'POLY'}${extraInstruments ? '+XTRA' : ''}${includeRhythm ? '+RHYTHM' : ''}${allowChromatic ? '+CHR' : ''}`
+  const summary = `${engine === 'instant' ? 'INSTANT · ' : ''}${key} ${mode.toUpperCase()} · ${tempo} BPM · ${bars} BARS · ${lead ? 'LEAD' : 'POLY'}${extraInstruments ? '+XTRA' : ''}${includeRhythm ? '+RHYTHM' : ''}${allowChromatic ? '+CHR' : ''}`
 
   const actions = (compact: boolean) => (
     <>
@@ -228,6 +249,19 @@ export function GenerationPanel() {
                 data={BARS.map(String)}
               />
               <span className="knob-label">bars</span>
+            </div>
+          </Tooltip>
+          <Tooltip label="INSTANT: offline rules + evolution of your kept motifs (★3+) — free, immediate, no network. CLAUDE: LLM composer (uses brief text, textures, drums)">
+            <div className="gen-ctl">
+              <SegmentedControl
+                value={engine}
+                onChange={(v) => setEngine(v as Engine)}
+                data={[
+                  { value: 'instant', label: 'INSTANT' },
+                  { value: 'claude', label: 'CLAUDE' },
+                ]}
+              />
+              <span className="knob-label">engine</span>
             </div>
           </Tooltip>
         </div>

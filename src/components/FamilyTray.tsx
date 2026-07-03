@@ -88,9 +88,9 @@ function TrayCard({ motif, family, isOrigin }: { motif: Motif; family: Family; i
         </Tooltip>
         <span className={`tray-badge ${isOrigin ? 'dim' : badgeCls}`}>
           {isOrigin
-            ? motif.source.kind === 'generated'
-              ? 'GEN'
-              : 'SEED'
+            ? motif.source.kind === 'seed'
+              ? 'SEED'
+              : 'GEN'
             : badge.label.replace('TRANSFORM · ', '')}
         </span>
       </div>
