@@ -41,9 +41,13 @@ Two Llama-style decoders sharing one vocab (`config.json` in the HF repo):
 - The reference loop feeds **zero-length tensors** routinely: empty KV caches
   `[b, h, 0, hs]` on the first step, `x` of shape `[b, 0]` on the token
   model's first sub-token, `hidden` of shape `[b, 0, 1024]` on subsequent
-  ones. onnxruntime (CPU) accepts all of these; **verify onnxruntime-web's
-  WebGPU EP does too** — this is the main Phase 4 unknown. Fallback: pad and
-  mask, or skip cache on step one.
+  ones. onnxruntime (CPU) accepts all of these. **Browser-verified
+  (2026-07-03, Chrome, WebGPU EP, int8)**: empty KV caches and empty `hidden`
+  are fine, but empty `x` dies in the quantized embedding lookup —
+  `DequantizeLinear … Invalid dispatch group size (0, 1, 1)`. The engine
+  works around it (see engine.ts): sub-token 0 feeds a dummy pad token and
+  reads position 0's logits, discarding that call's KV; step 1 rebuilds the
+  cache cleanly.
 
 ## Tokenizer facts — `MIDITokenizerV2`, `optimise_midi=True` ("tv2o")
 
@@ -116,9 +120,19 @@ engine-level sanity checks.
 | int8 | ~40–50 | ~1.4 s |
 
 An event ≈ one note. A 4-bar motif is ~16–40 note events, so even the CPU
-already beats the spec's 5 s first-motif target; WebGPU has generous headroom
-(and int8 op coverage on the WebGPU EP — spec risk #4 — should be validated
-in Phase 4, with fp16 as the fallback).
+already beats the spec's 5 s first-motif target.
+
+**Browser-measured (2026-07-03, Chrome WebGPU EP, int8, M-series)**: end to
+end the tier works — enable (download → sha256 → OPFS → sessions), generate,
+stream, validate, persist all verified in-browser — but a 5-motif batch took
+~77 s (~15 s/motif), well short of the Python-CPU numbers and the 5 s
+target. Session creation logs "some nodes were not assigned to the preferred
+execution provider": the int8 `DequantizeLinear`/`MatMulInteger` paths
+largely run on the ORT *CPU* EP inside the browser (spec risk #4 confirmed).
+Optimization avenues, in order: try **fp16 artifacts** (the WebGPU EP runs
+fp16 MatMul natively; `quantize.py --fp16` already emits them, ~450 MB), or
+a mixed build (int8 base + fp16 token model), and profile EP assignment.
+Quality first, speed second — decide after the listening pass.
 
 ## int8 validation (Phase 1 acceptance)
 

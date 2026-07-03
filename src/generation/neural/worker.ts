@@ -6,17 +6,17 @@
  * stays on Tier 1; there is deliberately no WASM fallback at this model size.
  */
 import * as ort from 'onnxruntime-web/webgpu'
-// Relative fs path: the package's `exports` map doesn't expose dist/*.wasm,
-// so a bare-specifier deep import is rejected by Vite. This bundles the JSEP
-// wasm as a hashed asset — no CDN, keeps the neural tier fully offline.
-import wasmUrl from '../../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm?url'
 import { MidiTokenizerV2 } from './tokenizer'
 import { eventsToMotif, trimRawMotif } from './adapters'
 import { generateEvents, type SessionLike, type TensorMaker } from './engine'
 import { MODEL_CONFIG } from './manifest'
 import type { FromWorker, NeuralJob, ToWorker } from './protocol'
 
-ort.env.wasm.wasmPaths = { wasm: wasmUrl }
+// No wasmPaths override: ORT 1.27's webgpu bundle selects its own binary
+// (ort-wasm-simd-threaded.asyncify.wasm) via new URL(..., import.meta.url),
+// which Vite resolves in dev (/@fs) and rewrites to a hashed local asset in
+// build — offline either way. Forcing a different binary (e.g. the JSEP one)
+// mismatches the glue's expected exports: "ke.$b is not a function".
 ort.env.wasm.numThreads = 1 // GPU does the heavy lifting; avoids COOP/COEP needs
 
 const post = (msg: FromWorker) => (self as unknown as { postMessage(m: FromWorker): void }).postMessage(msg)

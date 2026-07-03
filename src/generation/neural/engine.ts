@@ -227,19 +227,27 @@ export async function generateEvents(
         }
       }
 
-      const hidden =
-        i === 0
-          ? make('float32', new Float32Array(lastHidden), [1, 1, cfg.embSize])
-          : make('float32', new Float32Array(0), [1, 0, cfg.embSize])
-      const x =
-        i === 0
-          ? make('int64', new BigInt64Array(0), [1, 0])
-          : make('int64', new BigInt64Array([BigInt(sampled[sampled.length - 1])]), [1, 1])
+      // The reference feeds zero-length tensors here (empty x at i=0, empty
+      // hidden after) — desktop ORT accepts them, but the WebGPU EP dispatches
+      // a zero-size workgroup through the quantized embedding Gather and dies
+      // ("Invalid dispatch group size (0, 1, 1)"). So: at i=0 feed a dummy pad
+      // token and read position 0's logits (causal attention — position 0
+      // sees only the hidden state) and DISCARD that call's cache (it holds
+      // the dummy); at i=1 re-feed the hidden with the first sampled token on
+      // an empty cache, which rebuilds it cleanly; from i=2 on it's the
+      // reference's incremental shape.
+      const feedHidden = i <= 1
+      const hidden = feedHidden
+        ? make('float32', new Float32Array(lastHidden), [1, 1, cfg.embSize])
+        : make('float32', new Float32Array(0), [1, 0, cfg.embSize])
+      const xTok = i === 0 ? tok.padId : sampled[sampled.length - 1]
+      const x = make('int64', new BigInt64Array([BigInt(xTok)]), [1, 1])
+      if (i === 1) tokKv = emptyKv(make, cfg.tokenLayers, cfg.tokenHeads, cfg.tokenHeadSize)
       const tokOut = await sessions.token.run({ hidden, x, ...tokKv })
-      tokKv = carryKv(tokOut, cfg.tokenLayers)
+      if (i !== 0) tokKv = carryKv(tokOut, cfg.tokenLayers)
       const y = tokOut.y
-      const q = y.dims[1]
-      const logits = (y.data as Float32Array).subarray((q - 1) * tok.vocabSize, q * tok.vocabSize)
+      const pos = i === 0 ? 0 : y.dims[1] - 1
+      const logits = (y.data as Float32Array).subarray(pos * tok.vocabSize, (pos + 1) * tok.vocabSize)
 
       const probs = softmaxWithTemp(logits, spec.temperature)
       const masked = new Float32Array(tok.vocabSize)

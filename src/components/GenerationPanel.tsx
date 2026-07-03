@@ -167,7 +167,10 @@ export function GenerationPanel() {
       keepers: keepersOf(motifs.values()),
       seed: randomSeed(),
       onMotif: (raw, seed, parentId) => {
-        const result = validateBatch([raw], {
+        // Streamed one at a time, so the validator's "Motif N" fallback would
+        // name every card "Motif 1" — name them from the seed instead.
+        const name = `Neural ${(seed >>> 0).toString(16).padStart(8, '0').slice(0, 4)}`
+        const result = validateBatch([{ ...raw, name }], {
           key: brief.key,
           mode: brief.mode,
           bars: brief.bars,
