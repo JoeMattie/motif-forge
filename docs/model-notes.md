@@ -131,6 +131,20 @@ degradation. Six comparison files (fp32 vs int8 at three seeds) are in
 `tools/quantize/samples/` for the **manual listening pass, which is the final
 accept gate** before the int8 artifacts ship.
 
+## Local testing (before hosting is decided)
+
+Serve the int8 artifacts from the app's own dev server:
+
+```sh
+mkdir -p public/models
+cp tools/quantize/dist/*.onnx public/models/
+```
+
+`public/models/` is gitignored; the client fetches from `/models/` by
+default (`VITE_MODEL_BASE_URL` overrides). Then: dev server → generation
+panel → ENGINE: NEURAL → ENABLE. Note `npm run build` copies `public/` into
+`dist/`, so remove the local copies before judging build size.
+
 ## Hosting
 
 Artifacts are content-hashed (`model_base.q8.<sha8>.onnx`,
