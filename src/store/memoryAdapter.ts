@@ -8,6 +8,7 @@ export const memoryAdapter: PersistenceAdapter = {
   },
   async putMotif() {},
   async putMotifs() {},
+  async deleteMotifs() {},
   async putConcept() {},
   async deleteConcept() {},
   async putPartVariations() {},

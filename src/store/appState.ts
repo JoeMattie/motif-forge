@@ -70,6 +70,9 @@ export type Action =
   | { type: 'PART_VARIATIONS_UPSERT'; variations: PartVariation[] }
   /** PRUNE: hard-delete bay tree nodes (motifs are only ever soft-discarded; these aren't motifs). */
   | { type: 'PART_VARIATIONS_DELETED'; ids: string[] }
+  /** CLEAR on the discarded filter: hard-delete discarded families (all members)
+   *  plus their bay trees — the one place motifs leave the db instead of soft-discarding. */
+  | { type: 'DISCARDED_PURGED'; motifIds: string[]; variationIds: string[] }
   | { type: 'MOTIF_RATED'; id: string; rating: Rating }
   | { type: 'MOTIF_DISCARDED'; id: string }
   | { type: 'MOTIF_RESTORED'; id: string }
@@ -127,6 +130,23 @@ export function reducer(state: AppState, action: Action): AppState {
       for (const m of action.motifs) motifs.set(m.id, m)
       const selectedId = state.selectedId ?? action.motifs[0]?.id ?? null
       return { ...state, motifs, selectedId }
+    }
+    case 'DISCARDED_PURGED': {
+      const gone = new Set(action.motifIds)
+      const motifs = new Map(state.motifs)
+      for (const id of action.motifIds) motifs.delete(id)
+      const partVariations = new Map(state.partVariations)
+      for (const id of action.variationIds) partVariations.delete(id)
+      const keep = (id: string | null) => (id !== null && gone.has(id) ? null : id)
+      return {
+        ...state,
+        motifs,
+        partVariations,
+        selectedId: keep(state.selectedId),
+        mutationTargetId: keep(state.mutationTargetId),
+        expandedFamilyId: keep(state.expandedFamilyId),
+        lastDiscardedId: keep(state.lastDiscardedId),
+      }
     }
     case 'MOTIF_RATED':
       return withMotif(state, action.id, { rating: action.rating })
