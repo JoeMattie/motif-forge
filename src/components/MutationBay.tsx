@@ -200,7 +200,7 @@ export function MutationBay({ source }: { source: Motif }) {
     const lockedParts = hasParts
       ? source.parts.map((_, i) => i).filter((i) => i !== part)
       : undefined
-    void enqueue(() => mutateBatch(ctx, brief, 5, { lockedParts, lockRhythm }))
+    void enqueue(() => mutateBatch(ctx, brief, 1, { lockedParts, lockRhythm }))
       .then((result) => {
         const vs = variationsFromChildren(
           result.valid,

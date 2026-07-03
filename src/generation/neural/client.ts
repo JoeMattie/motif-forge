@@ -66,6 +66,7 @@ interface PendingRequest {
   onMotif: (raw: RawMotif, seed: number, parentId?: string) => void
   onDone: (generated: number) => void
   onError: (message: string) => void
+  onProgress?: (done: number, total: number, eventsPerSec: number) => void
 }
 const pending = new Map<string, PendingRequest>()
 
@@ -74,6 +75,7 @@ function handleMessage(msg: FromWorker): void {
   const req = pending.get(msg.requestId)
   if (!req) return
   if (msg.type === 'motif') req.onMotif(msg.raw, msg.seed, msg.parentId)
+  else if (msg.type === 'progress') req.onProgress?.(msg.done, msg.total, msg.eventsPerSec)
   else if (msg.type === 'done') {
     pending.delete(msg.requestId)
     req.onDone(msg.generated)
@@ -237,6 +239,8 @@ export interface NeuralBatchRequest {
   onMotif: (raw: RawMotif, seed: number, parentId?: string) => void
   onDone: (generated: number) => void
   onError: (message: string) => void
+  /** Sampling progress from the worker: completed candidates + decode speed. */
+  onProgress?: (done: number, total: number, eventsPerSec: number) => void
 }
 
 /** Build the per-candidate jobs: fresh prompts + keeper continuations. */
@@ -309,7 +313,12 @@ export function requestNeuralBatch(req: NeuralBatchRequest): { cancel(): void } 
     req.onError('neural engine not ready')
     return { cancel: () => undefined }
   }
-  pending.set(requestId, { onMotif: req.onMotif, onDone: req.onDone, onError: req.onError })
+  pending.set(requestId, {
+    onMotif: req.onMotif,
+    onDone: req.onDone,
+    onError: req.onError,
+    onProgress: req.onProgress,
+  })
   const msg: ToWorker = {
     type: 'generate',
     requestId,

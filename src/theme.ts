@@ -43,6 +43,10 @@ export const theme = createTheme({
       classNames: { root: 'wb-action' },
     },
     Kbd: { classNames: { root: 'wb-kbd' } },
+    Chip: {
+      defaultProps: { size: 'xs' },
+      classNames: { label: 'wb-chip-label', iconWrapper: 'wb-chip-icon' },
+    },
     SegmentedControl: {
       defaultProps: { size: 'xs', withItemsBorders: false },
       classNames: {

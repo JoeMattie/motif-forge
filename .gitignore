@@ -10,3 +10,7 @@ playwright-report/
 tools/quantize/work/
 tools/quantize/venv/
 public/models/
+.agents/
+.claude/settings.local.json
+skills-lock.json
+.claude/skills/

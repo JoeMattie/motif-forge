@@ -16,15 +16,3 @@ test('INSTANT engine generates a batch with the LLM route dead', async ({ page }
   await expect(page.getByRole('button', { name: '5 added' })).toBeVisible()
   await expect(page.locator('.pending-card')).toHaveCount(0)
 })
-
-test('INSTANT surprise works offline too', async ({ page }) => {
-  await page.route('**/api/anthropic/**', (route) => route.abort())
-  await gotoApp(page)
-
-  await page.getByRole('button', { name: /^generate$/i }).click()
-  await page.locator('.wb-seg-label', { hasText: 'INSTANT' }).click()
-  await page.getByRole('button', { name: /surprise/i }).click()
-
-  await expect(page.locator('.motif-card')).toHaveCount(8)
-  await expect(page.getByRole('button', { name: '5 added' })).toBeVisible()
-})

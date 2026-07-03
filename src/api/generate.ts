@@ -19,18 +19,26 @@ async function runBatch(
   retryPrompt: (n: number) => string,
   n: number,
   toResult: (raw: unknown) => ValidationResult,
+  onStep?: (step: string) => void,
 ): Promise<ValidationResult> {
+  onStep?.(`prompting claude-sonnet-4-6 — ${n} motifs, awaiting response`)
   let { text, stopReason } = await callClaude(prompt, MAX_TOKENS)
   if (stopReason === 'max_tokens') {
     // Truncated JSON is unsalvageable — retry once with a smaller batch.
     const smaller = Math.max(3, Math.floor(n / 2))
+    onStep?.(`response hit the ${MAX_TOKENS}-token cap — retrying with ${smaller} motifs`)
     ;({ text, stopReason } = await callClaude(retryPrompt(smaller), MAX_TOKENS))
     if (stopReason === 'max_tokens') throw new Error('response truncated twice; try a smaller batch')
   }
+  onStep?.('extracting JSON — validating notes, scale, and voice caps')
   return toResult(extractJson(text))
 }
 
-export async function generateBatch(brief: GenerationBrief, n: number): Promise<ValidationResult> {
+export async function generateBatch(
+  brief: GenerationBrief,
+  n: number,
+  onStep?: (step: string) => void,
+): Promise<ValidationResult> {
   const batchId = newId()
   return runBatch(
     buildGenerationPrompt(brief, n),
@@ -46,6 +54,7 @@ export async function generateBatch(brief: GenerationBrief, n: number): Promise<
         allowChromatic: brief.allowChromatic,
         source: () => ({ kind: 'generated', brief: brief.text, batchId }),
       }),
+    onStep,
   )
 }
 

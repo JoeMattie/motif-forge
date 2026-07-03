@@ -83,7 +83,7 @@ export function MotifCard({ family, selected, expanded, onToggleExpand, conceptR
         </span>
       </div>
       <LcdRoll motif={face} muted={discarded} />
-      {(face.parts.length > 1 || face.scaleWarning) && (
+      
         <div className="part-legend">
           {face.parts.length > 1 &&
             face.parts.map((p, i) => (
@@ -102,7 +102,7 @@ export function MotifCard({ family, selected, expanded, onToggleExpand, conceptR
             </Tooltip>
           )}
         </div>
-      )}
+      
       {discarded ? (
         <div className="card-footer">
           <span className="discard-chip">

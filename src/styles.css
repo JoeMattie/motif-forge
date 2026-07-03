@@ -175,6 +175,7 @@ mark.hk,
    Marks stay underline-only so the transform can't garble them. */
 .wb-btn {
   font-family: inherit;
+  min-height: 20px;
   transition: border-color 100ms, box-shadow 100ms, filter 100ms;
   user-select: none;
 }
@@ -665,6 +666,40 @@ mark.hk,
   font-weight: 700;
 }
 
+/* Mantine Chip skinned as a workbench chip (classes stamped by the theme).
+   .gen-chip is a plain wrapper so Tooltip has a hoverable element (Chip's ref
+   lands on its hidden checkbox input). */
+.gen-chip {
+  display: inline-flex;
+}
+.wb-chip-label {
+  height: 24px;
+  padding: 0 10px;
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  border-radius: 7px;
+  color: var(--label);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.wb-chip-label[data-checked] {
+  background: var(--chip-on-bg);
+  border-color: var(--chip-on-bg);
+  color: var(--chip-on-text);
+  font-weight: 700;
+  padding: 0 9px 0 6px;
+}
+.wb-chip-icon {
+  color: var(--accent);
+}
+/* greyed out when the selected engine ignores the option (e.g. INSTANT) */
+.wb-chip-label[data-disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* Mantine Kbd, matching the LCD/mono hardware idiom. */
 .wb-kbd {
   background: var(--surface);
@@ -680,6 +715,8 @@ mark.hk,
 /* Mantine ActionIcon (subtle) — quiet icon buttons like the ✕ discards. */
 .wb-action {
   color: var(--label-dim);
+  min-height: 20px;
+  min-width: 20px;
 }
 .wb-action:hover {
   background: var(--surface);
@@ -705,6 +742,21 @@ main {
 }
 
 /* ---------- generation strip / module ---------- */
+
+/* The generation panel docks to the top of the scrolling view: flush in the
+   flow at rest, floating over the cards (with a lifted shadow) once anything
+   has scrolled underneath it. */
+.gen-dock {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  transition: box-shadow 160ms ease;
+}
+.gen-dock.stuck {
+  box-shadow:
+    var(--module-hl),
+    0 10px 24px rgba(0, 0, 0, 0.25);
+}
 
 .gen-strip {
   display: flex;
@@ -760,6 +812,26 @@ main {
   gap: 20px;
   align-items: center;
 }
+/* key + mode side by side, tempo stacked underneath */
+.gen-knob-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.gen-knob-row {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+/* engine gets its own divided section */
+.gen-engine {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+}
 /* non-knob brief controls (tempo slider, bars seg) with a knob-style caption */
 .gen-ctl {
   display: flex;
@@ -788,7 +860,7 @@ main {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  justify-content: center;
+  justify-content: flex-start;
 }
 .gen-actions .row {
   display: flex;
@@ -796,6 +868,47 @@ main {
 }
 .gen-actions .wb-btn {
   min-width: 76px;
+}
+
+/* progress strip docked under the generation module (hidden with the collapsed panel) */
+.gen-progress {
+  position: relative;
+  height: 24px;
+  margin: 0 18px 12px;
+  border-radius: 6px;
+  background: var(--lcd-bg);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.gen-progress-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--green);
+  transition: width 160ms ease;
+}
+.gen-progress.running .gen-progress-fill {
+  background: var(--accent);
+  animation: pendpulse 1.4s ease-in-out infinite;
+}
+.gen-progress.failed .gen-progress-fill {
+  background: var(--danger);
+}
+.gen-progress-text {
+  position: absolute;
+  inset: 0;
+  padding: 0 10px;
+  line-height: 24px;
+  text-align: center;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  color: var(--lcd-text);
+  /* the step description is pre-formatted — no CSS uppercasing ("Eb", not "EB") */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---------- filter row ---------- */
@@ -991,6 +1104,7 @@ main {
   letter-spacing: 0.08em;
   color: var(--label-dim);
   text-transform: uppercase;
+  min-height: 16px;
 }
 .part-legend span {
   display: inline-flex;
