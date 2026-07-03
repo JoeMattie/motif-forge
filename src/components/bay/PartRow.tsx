@@ -99,6 +99,7 @@ function NodeCard({
       <div className="node-foot">
         <Tooltip label="Put this take in the mix — it plays instead of the original (Enter)">
           <button
+            type="button"
             className="promote-chip"
             data-promoted={inMix}
             onClick={(e) => {
@@ -118,6 +119,7 @@ function NodeCard({
         <span className="spacer" />
         <Tooltip label="Generate 5 LLM takes branching from THIS take (m)">
           <button
+            type="button"
             className="promote-chip"
             onClick={(e) => {
               e.stopPropagation()
@@ -332,6 +334,7 @@ export function PartRow({
               <div className="node-foot">
                 <Tooltip label="Play the original — clears this part's selected take (Enter)">
                   <button
+                    type="button"
                     className="promote-chip"
                     data-promoted={originInMix}
                     onClick={(e) => {

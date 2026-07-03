@@ -31,7 +31,7 @@ function ConceptChip({ family }: { family: Family }) {
     <Menu withinPortal position="bottom-start">
       <Menu.Target>
         <Tooltip label="Tag this family to a song concept — variants inherit the tag">
-          <button className={`concept-chip${concept ? '' : ' none'}`} onClick={(e) => e.stopPropagation()}>
+          <button type="button" className={`concept-chip${concept ? '' : ' none'}`} onClick={(e) => e.stopPropagation()}>
             {concept ? concept.name : 'No concept'} <CaretDownIcon size={8} weight="bold" />
           </button>
         </Tooltip>
@@ -92,6 +92,7 @@ export function LibraryView() {
         <ConceptChip family={f} />
         <span className="spacer" />
         <button
+          type="button"
           className="text-btn"
           onClick={() =>
             downloadBlob(
@@ -103,6 +104,7 @@ export function LibraryView() {
           .MID
         </button>
         <button
+          type="button"
           className="text-btn"
           onClick={() =>
             void renderMotif(f.face, tempo, {
@@ -165,7 +167,7 @@ export function LibraryView() {
         <div style={{ display: 'flex', gap: 4 }}>
           {[1, 2, 3, 4, 5].map((r) => (
             <Tooltip key={r} label={`Only families with a take rated ★${r} or higher`}>
-              <button className="starkey" data-latched={minRating === r} onClick={() => setMinRating(r)}>
+              <button type="button" className="starkey" data-latched={minRating === r} onClick={() => setMinRating(r)}>
                 <StarIcon size={8} weight="fill" />
                 {r}
               </button>

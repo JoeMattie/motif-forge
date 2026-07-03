@@ -16,6 +16,7 @@ export function App() {
   const dispatch = useAppDispatch()
 
   // Seed the dev fixtures on first run (empty library).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fires once when hydration lands on an empty library; motifs.size must not re-trigger it
   useEffect(() => {
     if (state.hydrated && state.motifs.size === 0) {
       dispatch({
@@ -23,7 +24,7 @@ export function App() {
         motifs: SAMPLE_MOTIFS.map((m) => ({ ...m, createdAt: Date.now() })),
       })
     }
-  }, [state.hydrated]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state.hydrated])
 
   if (!state.hydrated) {
     return (

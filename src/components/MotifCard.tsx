@@ -110,6 +110,7 @@ export function MotifCard({ family, selected, expanded, onToggleExpand, conceptR
           </span>
           <span className="spacer" />
           <button
+            type="button"
             className="text-btn"
             onClick={(e) => {
               e.stopPropagation()

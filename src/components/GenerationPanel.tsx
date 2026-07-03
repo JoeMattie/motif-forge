@@ -348,7 +348,7 @@ export function GenerationPanel() {
   if (!open) {
     return (
       <section ref={dockRef} className={`module gen-strip ${dockClass}`}>
-        <button className="gen-title" onClick={() => setOpen(true)}>
+        <button type="button" className="gen-title" onClick={() => setOpen(true)}>
           Generate <CaretRightIcon size={10} weight="bold" />
         </button>
         <span className="gen-summary">
@@ -370,7 +370,7 @@ export function GenerationPanel() {
   return (
     <section ref={dockRef} className={`module ${dockClass}`}>
       <div className="gen-strip" style={{ paddingBottom: 0 }}>
-        <button className="gen-title" onClick={() => setOpen(false)}>
+        <button type="button" className="gen-title" onClick={() => setOpen(false)}>
           Generate <CaretDownIcon size={10} weight="bold" />
         </button>
       </div>

@@ -24,6 +24,7 @@ function TrackChip({ motif }: { motif: Motif }) {
       <Menu.Target>
         <Tooltip label="Which track of the album this take is used on">
           <button
+            type="button"
             className={`track-chip${motif.trackId ? '' : ' unassigned'}`}
             onClick={(e) => e.stopPropagation()}
           >
@@ -121,6 +122,7 @@ function RootGroup({ family }: { family: Family }) {
             <TrackChip motif={root} />
             <span className="spacer" />
             <button
+              type="button"
               className="text-btn"
               onClick={() =>
                 downloadBlob(
@@ -153,6 +155,7 @@ function RootGroup({ family }: { family: Family }) {
               <DerivedCard key={d.id} motif={d} />
             ))}
             <button
+              type="button"
               className="derive-slot"
               onClick={() => dispatch({ type: 'SET_MUTATION_TARGET', id: root.id })}
             >
@@ -205,6 +208,7 @@ export function ConceptView() {
   // Play the concept's promoted takes back to back.
   const playQueue = useRef<Motif[]>([])
   const [playingAll, setPlayingAll] = useState(false)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: playOpts reads the current transport settings on purpose; only playingAll should re-subscribe
   useEffect(() => {
     if (!playingAll) return
     const unsub = engine.subscribe(() => {
@@ -215,7 +219,6 @@ export function ConceptView() {
       }
     })
     return unsub
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playingAll])
 
   const playAll = () => {
@@ -330,7 +333,7 @@ export function ConceptView() {
           </span>
           <span className="spacer" />
           <Tooltip label="Play every family's promoted take back to back">
-            <button className="play-all" onClick={playAll}>
+            <button type="button" className="play-all" onClick={playAll}>
               <PlayRound size="md" playing={playingAll} onClick={playAll} />
               Play all in sequence
             </button>

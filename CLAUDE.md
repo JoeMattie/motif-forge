@@ -8,8 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run build` — TypeScript strict check (`tsc -b`) + production build; must pass with zero errors
 - `npm test` — Vitest unit tests (`tests/*.test.ts`) covering the pure core modules (`src/core/`, `src/api/parse.ts`); `npm run test:watch` for watch mode
 - `npm run test:e2e` — Playwright end-to-end tests (`e2e/*.spec.ts`); auto-starts the dev server, and `e2e/helpers.ts` intercepts the Anthropic proxy route with `page.route` so no API key or network is needed. One-time setup: `npx playwright install chromium`. Note: `MOTIFS_ADDED` auto-selects the first added motif, so the first seed card is already selected on load.
+- `npm run lint` — Biome linter (`biome.json`; recommended preset, formatter off, must pass with zero diagnostics); `npm run lint:fix` applies safe fixes. Rules turned off deliberately: `noNonNullAssertion` (strict-TS idiom used throughout), `noArrayIndexKey` (the domain model is positional — `note.part` and note selections are indices, so index IS the identity), `noImportantStyles`/`noDescendingSpecificity` (the hand-rolled Mantine-override stylesheet needs both), and `useKeyWithClickEvents`/`noStaticElementInteractions` (keyboard input is a global window keydown listener by design, not per-element handlers). Deliberate hook-dependency omissions carry `biome-ignore` comments with reasons — don't "fix" them.
 
-Vitest and Playwright are dev-only dependencies (test-tooling amendment to the brief's minimal-deps rule); runtime deps are unchanged.
+Vitest, Playwright, and Biome are dev-only dependencies (tooling amendment to the brief's minimal-deps rule); runtime deps are unchanged.
 
 The full spec is [motif-forge-project-brief.md](motif-forge-project-brief.md) — the source of truth for scope, data model, validation rules, and success criteria.
 

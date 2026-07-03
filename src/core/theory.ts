@@ -88,5 +88,5 @@ export function pitchName(pitch: number): string {
 }
 
 export function pitchToHz(pitch: number): number {
-  return 440 * Math.pow(2, (pitch - 69) / 12)
+  return 440 * 2 ** ((pitch - 69) / 12)
 }

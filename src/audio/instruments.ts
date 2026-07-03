@@ -135,7 +135,9 @@ export function createDrumKit(
       else hat.triggerAttackRelease(320, 0.05, t, vel) // anything else: tick
     },
     stopAll: () => {}, // stop is handled by the per-playback gain ramp + dispose
-    dispose: () => all.forEach((s) => s.dispose()),
+    dispose: () => {
+      for (const s of all) s.dispose()
+    },
   }
 }
 

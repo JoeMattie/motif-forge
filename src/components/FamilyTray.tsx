@@ -63,6 +63,7 @@ function TrayCard({ motif, family, isOrigin }: { motif: Motif; family: Family; i
           <span className="discard-chip">Discarded</span>
           <span className="spacer" />
           <button
+            type="button"
             className="text-btn"
             onClick={(e) => {
               e.stopPropagation()
@@ -125,6 +126,7 @@ function TrayCard({ motif, family, isOrigin }: { motif: Motif; family: Family; i
         )}
         <Tooltip label="Make this take the family's face — what the grid shows, plays, and exports">
           <button
+            type="button"
             className="promote-chip"
             aria-label={family.face.id === motif.id ? 'Promoted' : 'Promote'}
             data-promoted={family.face.id === motif.id}
@@ -197,7 +199,7 @@ export function FamilyTray({ family, onFold }: { family: Family; onFold: () => v
         {family.variants.map((v) => (
           <TrayCard key={v.id} motif={v} family={family} />
         ))}
-        <button className="tray-slot-new" onClick={openBay}>
+        <button type="button" className="tray-slot-new" onClick={openBay}>
           <span className="plus">
             <PlusIcon size={14} weight="bold" />
           </span>

@@ -41,7 +41,7 @@ export function Header() {
 
       {state.generation.message && (
         <Tooltip label="Dismiss">
-          <button className="toast" onClick={() => dispatch({ type: 'CLEAR_MESSAGE' })}>
+          <button type="button" className="toast" onClick={() => dispatch({ type: 'CLEAR_MESSAGE' })}>
             {state.generation.message}
           </button>
         </Tooltip>

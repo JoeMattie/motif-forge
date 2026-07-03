@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
   if (env.ANTHROPIC_API_KEY) {
     headers['x-api-key'] = env.ANTHROPIC_API_KEY
   } else if (env.ANTHROPIC_AUTH_TOKEN) {
-    headers['Authorization'] = `Bearer ${env.ANTHROPIC_AUTH_TOKEN}`
+    headers.Authorization = `Bearer ${env.ANTHROPIC_AUTH_TOKEN}`
     headers['anthropic-beta'] = 'oauth-2025-04-20'
   }
   return {

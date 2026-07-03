@@ -66,6 +66,8 @@ export function LcdRoll({
   return (
     <div className={`lcd${deep ? ' deep' : ''}`} style={{ height }}>
       <svg
+        role="img"
+        aria-label={`Piano roll: ${motif.name}`}
         viewBox={`0 0 ${totalBeats} ${span}`}
         preserveAspectRatio="none"
         style={{ height: '100%' }}

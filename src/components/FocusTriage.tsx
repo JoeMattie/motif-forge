@@ -160,7 +160,7 @@ export function FocusTriage() {
 
         <div className="focus-controls module">
           <div className="focus-transport">
-            <button className="play-round lg" title="Previous (←)" onClick={() => move(-1)}>
+            <button type="button" className="play-round lg" title="Previous (←)" onClick={() => move(-1)}>
               <CaretLeftIcon size={16} weight="bold" />
             </button>
             <Tooltip label="Play/stop (Space)">
@@ -171,7 +171,7 @@ export function FocusTriage() {
                 onClick={() => engine.toggle(face, playOpts(face))}
               />
             </Tooltip>
-            <button className="play-round lg" title="Next (→)" onClick={() => move(1)}>
+            <button type="button" className="play-round lg" title="Next (→)" onClick={() => move(1)}>
               <CaretRightIcon size={16} weight="bold" />
             </button>
           </div>
@@ -179,6 +179,7 @@ export function FocusTriage() {
           <div className="focus-ratekeys">
             {[1, 2, 3, 4, 5].map((r) => (
               <button
+                type="button"
                 key={r}
                 className="ratekey"
                 data-latched={face.rating === r}

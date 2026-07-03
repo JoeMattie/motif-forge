@@ -487,6 +487,7 @@ export function MutationBay({ source }: { source: Motif }) {
               {i > 0 && <span className="lineage-arrow">→</span>}
               <Tooltip label={m.name}>
                 <button
+                  type="button"
                   className="lineage-chip"
                   data-current={m.id === source.id}
                   onClick={() =>
@@ -589,7 +590,7 @@ export function MutationBay({ source }: { source: Motif }) {
               : 'Add the current mix to the family as a new take'
           }
         >
-          <button className="promote-big" disabled={selection.size === 0} onClick={promote}>
+          <button type="button" className="promote-big" disabled={selection.size === 0} onClick={promote}>
             Promote mix
           </button>
         </Tooltip>

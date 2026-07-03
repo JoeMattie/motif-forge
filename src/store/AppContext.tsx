@@ -91,6 +91,7 @@ export function AppProvider({
   // failure lands on a recovery screen instead of an eternal spinner.
   const [hydrationError, setHydrationError] = useState<string | null>(null)
   const [hydrationAttempt, setHydrationAttempt] = useState(0)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: hydrationAttempt is the RETRY trigger — the "unnecessary" dep deliberately re-runs the load
   useEffect(() => {
     let cancelled = false
     ;(async () => {

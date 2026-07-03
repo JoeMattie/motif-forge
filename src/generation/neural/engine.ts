@@ -17,7 +17,7 @@
  * app's seedable mulberry32 so any motif is reproducible.
  */
 import { mulberry32, type Rng } from '../symbolic/prng'
-import { MidiTokenizerV2 } from './tokenizer'
+import type { MidiTokenizerV2 } from './tokenizer'
 import type { NeuralModelConfig } from './manifest'
 
 export interface TensorLike {

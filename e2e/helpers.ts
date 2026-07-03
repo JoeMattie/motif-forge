@@ -19,7 +19,7 @@ export function mockMotif(name: string): Record<string, unknown> {
 /** Shape of a real /v1/messages response, with the batch fenced like the model returns it. */
 function claudeResponse(payload: unknown) {
   return {
-    content: [{ type: 'text', text: '```json\n' + JSON.stringify(payload) + '\n```' }],
+    content: [{ type: 'text', text: `\`\`\`json\n${JSON.stringify(payload)}\n\`\`\`` }],
     stop_reason: 'end_turn',
   }
 }
