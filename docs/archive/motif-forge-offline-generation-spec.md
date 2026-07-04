@@ -72,6 +72,8 @@ Implement in `src/generation/symbolic/`:
 
 **Acceptance:** batch generation works offline with network disabled; motifs are in-key, correct length; GA batch visibly incorporates material from kept motifs; deterministic given a seed.
 
+**As-built amendment (M6(GPT)3 incorporation, July 2026):** the population step grew into a real GA (`evolve.ts`): the ratio mix seeds a population that evolves for `EVOLVE_DEFAULTS.generations` under tournament selection against a Gaussian multi-feature fitness (`fitness.ts`, after arXiv 2409.12638), with elitism, fresh immigrants per generation, and a similarity-deduped top-n selection. The user's ratings still gate the gene pool (keepers) — the score only decides which survivors are worth triaging, and also ranks finished NEURAL batches best-first. A seeded probabilistic drum generator (`drums.ts`: per-time-sig kick/snare probability tables, melody-mapped hat density, Markov tom fills) lets the INSTANT tier honor `includeRhythm` with a lead+kit two-part motif.
+
 ## 6. Phase 3 — Tokenizer Port (TypeScript)
 
 Implement `src/generation/neural/tokenizer.ts` — a faithful port of `MIDITokenizerV2`:

@@ -2,7 +2,7 @@
 
 Verified 2026-07-02 against `SkyTNT/midi-model` @ main (app v1.3.5) and the
 HuggingFace ONNX exports, per the offline-generation spec
-([motif-forge-offline-generation-spec.md](motif-forge-offline-generation-spec.md), Phase 0).
+([archive/motif-forge-offline-generation-spec.md](archive/motif-forge-offline-generation-spec.md), Phase 0).
 All numbers below were measured locally, not taken from docs.
 
 ## Decision: `skytnt/midi-model-tv2o-medium`
