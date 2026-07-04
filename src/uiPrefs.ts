@@ -40,8 +40,12 @@ export function getAnthropicKey(): string {
 /**
  * Whether Claude-powered features can run: a user-supplied key, or the dev
  * server's proxy fallback. Reactive — flips as soon as the key is saved.
+ * `?no-dev-proxy` suppresses the fallback so e2e specs can exercise the
+ * keyless production gating on the dev server; the whole branch is compiled
+ * out of prod builds (import.meta.env.DEV is statically false there).
  */
 export function useClaudeReady(): boolean {
   const [key] = useAnthropicKey()
-  return key.trim() !== '' || import.meta.env.DEV
+  if (key.trim() !== '') return true
+  return import.meta.env.DEV && !new URLSearchParams(window.location.search).has('no-dev-proxy')
 }

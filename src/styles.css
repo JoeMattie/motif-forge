@@ -697,13 +697,22 @@ mark.hk,
   border-radius: 7px;
   padding: 2px;
 }
-/* dimmed + inert while disabled (e.g. a dice toggle overrides the value).
-   NB: Mantine stamps data-disabled={disabled} verbatim, so a seg given
-   disabled={false} still carries data-disabled="false" — a bare presence
-   selector ([data-disabled]) would match it. Key off the inputs instead. */
-.wb-seg:has(input:disabled) {
+/* dimmed + inert only while the WHOLE control is disabled (e.g. a dice
+   toggle overrides the value) — keyed as "no enabled input left", because a
+   single disabled item (ENGINE's CLAUDE without an API key) must not inert
+   its siblings. NB: Mantine stamps root data-disabled={disabled} verbatim,
+   so a seg given disabled={false} still carries data-disabled="false" — a
+   bare presence selector ([data-disabled]) would match it. */
+.wb-seg:not(:has(input:enabled)) {
   opacity: 0.5;
   pointer-events: none;
+}
+/* a single disabled item dims alone; clicks are already inert because the
+   label's htmlFor targets a disabled input, and hover stays live so the
+   item's explanatory tooltip still shows */
+.wb-seg-label[data-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .wb-seg-indicator {
   background: var(--chip-on-bg);
@@ -816,11 +825,14 @@ main {
   top: 0;
   z-index: 10;
   transition: box-shadow 160ms ease;
+  box-shadow:
+    var(--module-hl),
+    0 6px 18px rgba(0, 0, 0, 0.18);
 }
 .gen-dock.stuck {
   box-shadow:
     var(--module-hl),
-    0 10px 24px rgba(0, 0, 0, 0.25);
+    0 16px 36px rgba(0, 0, 0, 0.32);
 }
 
 .gen-strip {

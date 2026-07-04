@@ -32,6 +32,22 @@ test('a stored key sends generation straight to api.anthropic.com', async ({ pag
   expect(directHeaders?.['anthropic-dangerous-direct-browser-access']).toBe('true')
 })
 
+test('keyless prod gating disables only the CLAUDE engine, not the whole selector', async ({ page }) => {
+  // ?no-dev-proxy suppresses the dev-proxy fallback in useClaudeReady, so the
+  // app gates exactly like a keyless production build.
+  await page.goto('/?no-dev-proxy')
+  await page.locator('.motif-card').first().waitFor()
+
+  await expect(page.locator('.wb-seg input[value="claude"]')).toBeDisabled()
+
+  // The offline engines must stay clickable — regression: a single disabled
+  // item used to make the whole seg inert (pointer-events: none on the root),
+  // which also makes these clicks fail Playwright's actionability check.
+  await page.locator('.wb-seg-label', { hasText: 'GENETIC' }).click()
+  await expect(page.locator('.wb-seg-label', { hasText: 'TECHNO' })).toBeVisible()
+  await page.locator('.wb-seg-label', { hasText: 'INSTANT' }).click()
+})
+
 test('the KEY modal saves and clears the key, latching the header button', async ({ page }) => {
   await gotoApp(page)
   const keyButton = page.locator('.wb-header').getByRole('button', { name: /^key$/i })
