@@ -2627,6 +2627,19 @@ main {
 .noodle-roll-inner {
   position: relative;
 }
+/* The generic `.lcd svg` rule absolutizes SVGs to fill their screen (right
+   for the thumbnail rolls) — inside this SCROLLING editor it would collapse
+   both surfaces to zero height. Restore normal flow so the width/height
+   attributes size them and the velocity lane can stick. */
+.noodle-roll svg.noodle-svg,
+.noodle-roll svg.noodle-vel {
+  position: static;
+  inset: auto;
+  height: auto;
+}
+.noodle-roll svg.noodle-vel {
+  position: sticky;
+}
 .noodle-svg {
   display: block;
   touch-action: none;
