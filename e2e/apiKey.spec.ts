@@ -23,7 +23,6 @@ test('a stored key sends generation straight to api.anthropic.com', async ({ pag
   })
 
   await gotoApp(page)
-  await page.locator('.gen-title').click()
   await page.locator('.wb-seg-label', { hasText: 'CLAUDE' }).click()
   await page.getByRole('button', { name: 'Generate +5' }).click()
 

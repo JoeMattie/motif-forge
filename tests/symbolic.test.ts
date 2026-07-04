@@ -13,6 +13,7 @@ import {
   keepersOf,
   melodicLine,
   mutateLine,
+  mutateNotes,
 } from '../src/generation/symbolic/genetic'
 import {
   generateSymbolicBatch,
@@ -194,6 +195,29 @@ describe('genetic operators', () => {
       for (const note of notes) expect(isInScale(note.pitch, parent.key, parent.mode)).toBe(true)
     }
   })
+
+  it('mutateNotes is deterministic per seed and tolerates empty input', () => {
+    const parent = denseKeeper()
+    const a = mutateNotes(parent.notes, parent, mulberry32(7))
+    const b = mutateNotes(parent.notes, parent, mulberry32(7))
+    expect(a).toEqual(b)
+    expect(mutateNotes([], parent, mulberry32(7))).toEqual({ notes: [], ops: [] })
+    // The input is cloned, never edited in place.
+    expect(parent.notes).toEqual(denseKeeper().notes)
+  })
+
+  it('drum mode never invents pitches — only reorders the existing kit', () => {
+    const ctx = { key: 'D', mode: 'dorian' as const, bars: 2, timeSig: '4/4' }
+    const kit = [36, 38, 42, 46] // GM kick/snare/hats — deliberately out-of-scale material
+    const notes: Note[] = []
+    for (let b = 0; b < 8; b++) notes.push(makeNote({ pitch: kit[b % kit.length], startBeat: b }))
+    for (let seed = 1; seed <= 40; seed++) {
+      const { notes: out, ops } = mutateNotes(notes, ctx, mulberry32(seed), { drums: true })
+      expect(ops.every((op) => ['swap-adjacent', 'alter-rhythm-cell', 'retrograde-bar'].includes(op))).toBe(true)
+      const sorted = (xs: number[]) => [...xs].sort((x, y) => x - y)
+      expect(sorted(out.map((n) => n.pitch))).toEqual(sorted(notes.map((n) => n.pitch)))
+    }
+  })
 })
 
 describe('population step', () => {
@@ -224,7 +248,7 @@ describe('population step', () => {
     }
   })
 
-  it('mixes crossovers, mutants, and fresh walks when keepers exist', () => {
+  it('returns evolution survivors with keeper ancestry or fresh-walk descent', () => {
     const keepers = [
       denseKeeper({ id: 'k1' }),
       denseKeeper({ id: 'k2', key: 'G', mode: 'mixolydian' }),
@@ -233,21 +257,26 @@ describe('population step', () => {
     const result = generateSymbolicBatch(brief, 10, keepers, 1234)
     expect(result.valid).toHaveLength(10)
     expect(result.droppedCount).toBe(0)
-    const sources = result.valid.map((m) => m.source)
-    const crossovers = sources.filter((s) => s.kind === 'ga' && s.parentIds.length === 2)
-    const mutants = sources.filter((s) => s.kind === 'ga' && s.parentIds.length === 1)
-    const fresh = sources.filter((s) => s.kind === 'symbolic')
-    expect(crossovers).toHaveLength(3)
-    expect(mutants).toHaveLength(4)
-    expect(fresh).toHaveLength(3)
-    // GA children point at real keepers; fresh walks conform to the brief.
     const ids = new Set(keepers.map((k) => k.id))
-    for (const s of [...crossovers, ...mutants]) {
-      if (s.kind === 'ga') for (const pid of s.parentIds) expect(ids.has(pid)).toBe(true)
+    for (const m of result.valid) {
+      const s = m.source
+      // Every survivor is either keeper-descended ('ga') or fresh-descended ('symbolic').
+      expect(['ga', 'symbolic']).toContain(s.kind)
+      if (s.kind === 'ga') {
+        expect(s.parentIds.length).toBeGreaterThanOrEqual(1)
+        expect(s.parentIds.length).toBeLessThanOrEqual(4)
+        for (const pid of s.parentIds) expect(ids.has(pid)).toBe(true)
+        expect(s.fitness).toBeGreaterThan(0)
+      }
+      // Fresh-descended survivors conform to the brief; keeper-descended ones
+      // inherit their ancestors' key/mode/length (mixed keepers, mixed children).
+      if (s.kind === 'symbolic') {
+        expect([m.key, m.mode, m.bars, m.timeSig, m.tempo]).toEqual(['D', 'dorian', 4, '4/4', 100])
+        expect(s.fitness).toBeGreaterThan(0)
+      }
     }
-    for (const m of result.valid.filter((m) => m.source.kind === 'symbolic')) {
-      expect([m.key, m.mode, m.bars, m.timeSig, m.tempo]).toEqual(['D', 'dorian', 4, '4/4', 100])
-    }
+    // The keepers themselves were never edited in place.
+    expect(keepers[0].notes).toEqual(denseKeeper({ id: 'k1' }).notes)
   })
 
   it('is deterministic given the same seed and keepers', () => {

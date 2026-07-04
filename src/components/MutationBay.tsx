@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Badge, Button, Divider, Group, Kbd, Mark, Stack, Tooltip } from '@mantine/core'
 import { XIcon } from '@phosphor-icons/react'
-import type { Motif, PartVariation } from '../types'
+import type { Motif, PartVariation, Sound, SynthPreset } from '../types'
 import { parentIdOf } from '../types'
-import { beatsPerBar } from '../core/theory'
 import { applyTransform, describeTransform, type Transform } from '../core/transforms'
 import {
   buildPartTrees,
@@ -21,17 +20,17 @@ import {
 } from '../core/workbench'
 import { mutateBatch } from '../api/generate'
 import { enqueue } from '../api/queue'
-import { partMutationBrief } from '../api/prompts'
+import { mutateNotes, randomSeed } from '../generation/symbolic'
+import { mulberry32 } from '../generation/symbolic/prng'
 import { engine } from '../audio/engine'
-import { effectiveTempo } from '../store/appState'
 import { useAppDispatch, useAppState } from '../store/AppContext'
 import { newId } from '../core/ids'
+import { useClaudeReady } from '../uiPrefs'
 import { useIsLoading, useIsPlaying } from './hooks/usePlayhead'
 import { isTypingTarget } from './hooks/useKeyboardTriage'
 import { usePlayOptions } from './hooks/usePlayOptions'
 import { LcdRoll } from './LcdRoll'
 import { PlayRound } from './hw/PlayRound'
-import { AdvancedPanel } from './bay/AdvancedPanel'
 import { PartRow, provenanceLabel, type BayFocus } from './bay/PartRow'
 
 function lineageChain(motif: Motif, motifs: Map<string, Motif>): Motif[] {
@@ -66,6 +65,8 @@ function lineageLabel(m: Motif): string {
       return m.source.parentIds.length > 1 ? 'EVO CROSS' : 'EVO'
     case 'neural':
       return 'NEURAL'
+    case 'genetic':
+      return 'RIFF'
   }
 }
 
@@ -75,16 +76,44 @@ interface PendingBatch {
   parentNodeId: string | null
 }
 
+const SOUNDS: Sound[] = ['synth', 'piano', 'epiano', 'marimba', 'strings']
+const OSCILLATORS: SynthPreset['oscillator'][] = ['sine', 'triangle', 'sawtooth', 'square']
+
+/** A fresh patch for dice rolls that land on 'synth', within validation's clamps. */
+function randomPreset(rng: () => number): SynthPreset {
+  const pick = (lo: number, hi: number) => lo + rng() * (hi - lo)
+  return {
+    oscillator: OSCILLATORS[Math.floor(rng() * OSCILLATORS.length)],
+    envelope: {
+      attack: pick(0.001, 0.2),
+      decay: pick(0.05, 0.5),
+      sustain: pick(0.1, 0.8),
+      release: pick(0.05, 1),
+    },
+  }
+}
+
+/** Takes branching from a re-sounded take keep its sound, so a whole branch
+ * stays on the instrument it was rolled onto. */
+function inheritSound(v: PartVariation, node: PartVariation | null): PartVariation {
+  if (!node?.instrument) return v
+  const out: PartVariation = { ...v, instrument: node.instrument }
+  if (node.preset) out.preset = node.preset
+  return out
+}
+
 /**
  * Mutation Bay — a per-part variation workspace scoped to ONE source motif.
- * One row per part; MUTATE grows a tree of LLM takes to the right, ADVANCED
- * adds transforms + a custom brief. Enter picks one take per part, Space
- * loops the composite mix, and PROMOTE lands the mix in the family.
+ * One row per part; MUTATE grows a tree of instant GA takes to the right,
+ * CLAUDE asks for a targeted LLM rewrite, ADV drops down part-scoped
+ * deterministic transforms. Enter picks one take per part, Space loops the
+ * composite mix, and PROMOTE lands the mix in the family.
  */
 export function MutationBay({ source }: { source: Motif }) {
   const state = useAppState()
   const dispatch = useAppDispatch()
   const playOpts = usePlayOptions()
+  const claudeReady = useClaudeReady()
 
   const hasParts = source.parts.length > 0
   const partCount = partCountOf(source)
@@ -109,12 +138,10 @@ export function MutationBay({ source }: { source: Motif }) {
   const [pending, setPending] = useState<PendingBatch[]>([])
   const [message, setMessage] = useState<string | null>(null)
   const [pruneArmed, setPruneArmed] = useState(false)
-  const swapTimer = useRef<number | null>(null)
   const pruneTimer = useRef<number | null>(null)
 
   useEffect(
     () => () => {
-      if (swapTimer.current !== null) clearTimeout(swapTimer.current)
       if (pruneTimer.current !== null) clearTimeout(pruneTimer.current)
     },
     [],
@@ -156,7 +183,8 @@ export function MutationBay({ source }: { source: Motif }) {
   }
 
   /** Select a take into the mix (null = original). While the mix loops, the
-   * swap lands on the next bar boundary instead of restarting the phrase. */
+   * new take swaps in immediately via the engine's mid-flight swap — pending
+   * notes cancel, whatever is sounding rings out. */
   const applySelection = (part: number, node: PartVariation | null) => {
     const cur = selection.get(part) ?? null
     const updates: PartVariation[] = []
@@ -175,23 +203,14 @@ export function MutationBay({ source }: { source: Motif }) {
     else nextSel.set(part, node)
     const nextMix = compositeMotif(source, nextSel, mixId)
 
-    const pos = engine.getPositionBeats()
-    if (engine.getSnapshot().playingMotifId === mixId && pos !== null) {
-      const bpb = beatsPerBar(source.timeSig)
-      const total = source.bars * bpb
-      const nextBar = Math.ceil((pos + 0.05) / bpb) * bpb
-      const waitMs = ((nextBar - pos) * 60 * 1000) / effectiveTempo(state.transport, source)
-      if (swapTimer.current !== null) clearTimeout(swapTimer.current)
-      swapTimer.current = window.setTimeout(() => {
-        if (engine.getSnapshot().playingMotifId !== mixId) return
-        engine.play(nextMix, playOpts(nextMix, { loop: true, fromBeat: nextBar % total }))
-      }, Math.max(0, waitMs - 90))
+    if (engine.getSnapshot().playingMotifId === mixId) {
+      engine.swap(nextMix, playOpts(nextMix, { loop: true }))
     }
   }
 
   // ---- generation ----
 
-  const runMutation = (part: number, node: PartVariation | null, brief: string, lockRhythm = false) => {
+  const runMutation = (part: number, node: PartVariation | null, brief: string) => {
     const key = newId()
     const parentNodeId = node?.id ?? null
     setPending((p) => [...p, { key, part, parentNodeId }])
@@ -200,7 +219,7 @@ export function MutationBay({ source }: { source: Motif }) {
     const lockedParts = hasParts
       ? source.parts.map((_, i) => i).filter((i) => i !== part)
       : undefined
-    void enqueue(() => mutateBatch(ctx, brief, 1, { lockedParts, lockRhythm }))
+    void enqueue(() => mutateBatch(ctx, brief, 1, { lockedParts }))
       .then((result) => {
         const vs = variationsFromChildren(
           result.valid,
@@ -210,7 +229,7 @@ export function MutationBay({ source }: { source: Motif }) {
           { kind: 'llm', brief },
           newId,
           Date.now(),
-        )
+        ).map((v) => inheritSound(v, node))
         if (vs.length > 0) dispatch({ type: 'PART_VARIATIONS_UPSERT', variations: vs })
         const dropped = result.droppedCount + (result.valid.length - vs.length)
         setMessage(
@@ -221,8 +240,35 @@ export function MutationBay({ source }: { source: Motif }) {
       .finally(() => setPending((p) => p.filter((x) => x.key !== key)))
   }
 
-  const mutateDefault = (part: number, node: PartVariation | null) =>
-    runMutation(part, node, partMutationBrief(partName(part), partIsDrums(part)))
+  /** MUTATE: one instant offline GA take — a small seeded in-scale edit
+   * (rhythm-only ops on drum parts), branching from the focused take. Each
+   * press adds one more sibling. No API involved. */
+  const mutateGa = (part: number, node: PartVariation | null) => {
+    const take = node ? node.notes : partNotes(source, part)
+    if (take.length === 0) {
+      setMessage(`Nothing to evolve — ${partName(part)} has no notes`)
+      return
+    }
+    const drums = partIsDrums(part)
+    const seed = randomSeed()
+    const { notes, ops } = mutateNotes(take, source, mulberry32(seed), { drums })
+    const variation: PartVariation = inheritSound(
+      {
+        id: newId(),
+        sourceMotifId: source.id,
+        partIndex: part,
+        parentNodeId: node?.id ?? null,
+        notes,
+        provenance: { kind: 'ga', ops: ops.join('+'), seed },
+        selected: false,
+        hidden: false,
+        createdAt: Date.now(),
+      },
+      node,
+    )
+    dispatch({ type: 'PART_VARIATIONS_UPSERT', variations: [variation] })
+    setMessage(`+1 evolved take on ${partName(part)}`)
+  }
 
   const applyPartTransform = (part: number, node: PartVariation | null, t: Transform) => {
     const take = node ? node.notes : partNotes(source, part)
@@ -230,19 +276,51 @@ export function MutationBay({ source }: { source: Motif }) {
     dispatch({
       type: 'PART_VARIATIONS_UPSERT',
       variations: [
-        {
-          id: newId(),
-          sourceMotifId: source.id,
-          partIndex: part,
-          parentNodeId: node?.id ?? null,
-          notes: child.notes,
-          provenance: { kind: 'transform', transform: describeTransform(t) },
-          selected: false,
-          hidden: false,
-          createdAt: Date.now(),
-        },
+        inheritSound(
+          {
+            id: newId(),
+            sourceMotifId: source.id,
+            partIndex: part,
+            parentNodeId: node?.id ?? null,
+            notes: child.notes,
+            provenance: { kind: 'transform', transform: describeTransform(t) },
+            selected: false,
+            hidden: false,
+            createdAt: Date.now(),
+          },
+          node,
+        ),
       ],
     })
+  }
+
+  /** Dice: one new take that keeps the part's notes but plays them on a
+   * random OTHER sound (a fresh random patch when it lands on synth). It goes
+   * straight into the mix so the roll is instantly audible; repeated rolls
+   * land as siblings (a sound take never chains under another sound take). */
+  const rollSound = (part: number) => {
+    if (!hasParts || partIsDrums(part)) return
+    const sel = selection.get(part) ?? null
+    const current = sel?.instrument ?? source.parts[part]?.instrument ?? 'synth'
+    const rng = mulberry32(randomSeed())
+    const pool = SOUNDS.filter((s) => s !== current)
+    const instrument = pool[Math.floor(rng() * pool.length)]
+    const variation: PartVariation = {
+      id: newId(),
+      sourceMotifId: source.id,
+      partIndex: part,
+      parentNodeId: sel?.provenance.kind === 'sound' ? sel.parentNodeId : (sel?.id ?? null),
+      notes: sel ? sel.notes : partNotes(source, part),
+      provenance: { kind: 'sound', instrument },
+      instrument,
+      selected: false,
+      hidden: false,
+      createdAt: Date.now(),
+    }
+    if (instrument === 'synth') variation.preset = randomPreset(rng)
+    dispatch({ type: 'PART_VARIATIONS_UPSERT', variations: [variation] })
+    applySelection(part, variation)
+    setMessage(`${partName(part)} → ${instrument}`)
   }
 
   // ---- tree housekeeping ----
@@ -293,6 +371,7 @@ export function MutationBay({ source }: { source: Motif }) {
       ...source,
       id: newId(),
       name: `${source.name} mix`,
+      parts: mix.parts, // carries any dice-rolled sound overrides
       notes: compositeNotes(source, selection),
       rating: 0,
       discarded: false,
@@ -366,7 +445,7 @@ export function MutationBay({ source }: { source: Motif }) {
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return
     if (e.key === 'Escape') {
-      // ESC walks out: text field → advanced panel → the bay itself
+      // ESC walks out: text field → open ADV dropdown → the bay itself
       if (isTypingTarget(e.target)) {
         ;(e.target as HTMLElement).blur()
         return
@@ -399,7 +478,10 @@ export function MutationBay({ source }: { source: Motif }) {
         applySelection(effFocus.part, focusedNode)
         break
       case 'm':
-        mutateDefault(effFocus.part, focusedNode)
+        mutateGa(effFocus.part, focusedNode)
+        break
+      case 's':
+        rollSound(effFocus.part)
         break
       case 'a':
         setAdvanced((a) =>
@@ -441,8 +523,6 @@ export function MutationBay({ source }: { source: Motif }) {
       }))
     : [{ name: 'all', instrument: 'transport sound', isDrums: false, index: 0 }]
 
-  const advancedNode = advanced?.nodeId ? (state.partVariations.get(advanced.nodeId) ?? null) : null
-
   return (
     <div className="bay">
       <section className="module bay-module bay-transport">
@@ -455,10 +535,13 @@ export function MutationBay({ source }: { source: Motif }) {
             <span className="micro-dim" style={{ whiteSpace: 'nowrap' }}>
               mix · {source.key} {source.mode.slice(0, 3)} · {source.bars}B · {source.tempo} BPM
             </span>
+            <span className="kbd-legend" style={{ whiteSpace: 'nowrap' }}>
+              <Kbd>space</Kbd> loop mix
+            </span>
           </Stack>
           <Divider orientation="vertical" />
           {/* what the mix currently plays, part by part */}
-          <Group gap={6} style={{ flex: 1, minWidth: 0 }}>
+          <Stack gap={4} align="flex-start" style={{ flex: 1, minWidth: 0 }}>
             {rowParts.map((p) => {
               const sel = selection.get(p.index)
               return (
@@ -481,13 +564,13 @@ export function MutationBay({ source }: { source: Motif }) {
                 </Tooltip>
               )
             })}
-          </Group>
-          <span className="kbd-legend" style={{ whiteSpace: 'nowrap' }}>
-            <Kbd>space</Kbd> loop mix
-          </span>
+          </Stack>
+          <Divider orientation="vertical" />
+          {/* the combined mix: every part at its currently selected take */}
+          <div style={{ flex: '0 0 50%', minWidth: 0 }}>
+            <LcdRoll motif={mix} height={96} />
+          </div>
         </Group>
-        {/* the combined mix: every part at its currently selected take */}
-        <LcdRoll motif={mix} height={96} />
         <div className="lineage-row">
           <span style={{ letterSpacing: '.14em', color: 'var(--faint)' }}>Lineage</span>
           {chain.map((m, i) => (
@@ -528,36 +611,29 @@ export function MutationBay({ source }: { source: Motif }) {
           mixId={mixId}
           collapsed={collapsedParts.has(p.index)}
           onToggleCollapse={() => toggleCollapse(p.index)}
-          advancedOpen={advanced?.part === p.index}
-          onToggleAdvanced={() =>
-            setAdvanced((a) =>
-              a?.part === p.index
-                ? null
-                : { part: p.index, nodeId: effFocus.part === p.index ? effFocus.nodeId : null },
-            )
-          }
+          canRollSound={hasParts && !p.isDrums}
+          advancedNodeId={advanced?.part === p.index ? advanced.nodeId : undefined}
+          claudeReady={claudeReady}
+          busy={pending.some((b) => b.part === p.index)}
           callbacks={{
             onFocus: (nodeId) => focusNode(p.index, nodeId),
             onSelect: (node) => applySelection(p.index, node),
-            onMutate: (node) => mutateDefault(p.index, node),
+            onMutate: (node) => mutateGa(p.index, node),
+            onClaude: (node, brief) => runMutation(p.index, node, brief),
+            onTransform: (node, t) => applyPartTransform(p.index, node, t),
+            onSoundRoll: () => rollSound(p.index),
+            onToggleAdvanced: (nodeId) => {
+              // plain setFocus, not focusNode — focusNode drags an open ADV
+              // dropdown onto this take first, which would make the toggle
+              // read as "already open" and close it instead of moving it
+              setFocus({ part: p.index, nodeId })
+              setAdvanced((a) =>
+                a?.part === p.index && a.nodeId === nodeId ? null : { part: p.index, nodeId },
+              )
+            },
+            onCloseAdvanced: () => setAdvanced(null),
           }}
-        >
-          {advanced?.part === p.index && (
-            <AdvancedPanel
-              key={`${p.index}:${advanced.nodeId ?? 'origin'}`}
-              source={source}
-              partIndex={p.index}
-              isDrums={p.isDrums}
-              baseTake={advancedNode ? advancedNode.notes : partNotes(source, p.index)}
-              focusLabel={advancedNode ? 'the focused take' : 'the original'}
-              busy={pending.some((b) => b.part === p.index)}
-              onApplyTransform={(t) => applyPartTransform(p.index, advancedNode, t)}
-              onRunBrief={(brief, lockRhythm) =>
-                runMutation(p.index, advancedNode, brief, lockRhythm)
-              }
-            />
-          )}
-        </PartRow>
+        />
       ))}
 
       <div className="bay-footer">
@@ -578,14 +654,14 @@ export function MutationBay({ source }: { source: Motif }) {
         {message && <span className="micro-dim bay-message">{message}</span>}
         <span className="spacer" />
         <span className="kbd-legend">
-          <Kbd>space</Kbd> mix · <Kbd>enter</Kbd> use take · <Mark className="hk">m</Mark>utate ·{' '}
-          <Mark className="hk">a</Mark>dvanced · <Mark className="hk">p</Mark>romote ·{' '}
-          <Kbd>esc</Kbd> close
+          <Kbd>space</Kbd> play · <Kbd>enter</Kbd> use take · <Mark className="hk">m</Mark>utate ·{' '}
+          <Mark className="hk">a</Mark>dvanced · <Mark className="hk">s</Mark>ound ·{' '}
+          <Mark className="hk">p</Mark>romote
         </span>
         <Button
           aria-label="Close bay"
           onClick={closeBay}
-          leftSection={<XIcon size={10} weight="bold" />}
+          leftSection={<XIcon size={10} />}
         >
           <span>
             Close · <Kbd>esc</Kbd>

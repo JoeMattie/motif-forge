@@ -26,6 +26,11 @@ export function randInt(rng: Rng, lo: number, hi: number): number {
   return lo + Math.floor(rng() * (hi - lo + 1))
 }
 
+/** Uniform float in [lo, hi). */
+export function uniform(rng: Rng, lo: number, hi: number): number {
+  return lo + rng() * (hi - lo)
+}
+
 export function pick<T>(rng: Rng, list: readonly T[]): T {
   return list[Math.floor(rng() * list.length)]
 }

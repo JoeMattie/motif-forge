@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
-import { gotoApp, SEED_NAMES } from './helpers'
+import { gotoApp, openBay, SEED_NAMES } from './helpers'
 
 const selectedName = (page: Page) => page.locator('.motif-card.selected .card-name')
 
@@ -63,8 +63,6 @@ test('rated filter shows only rated families', async ({ page }) => {
 test('triage keys are ignored while typing in a text field', async ({ page }) => {
   await gotoApp(page)
   await expect(selectedName(page)).toHaveText(SEED_NAMES[0])
-  // the concept field lives inside the expanded generation module
-  await page.locator('.gen-title').click()
   const concept = page.getByPlaceholder(/concept — e\.g\./)
   await concept.click()
   await concept.pressSequentially('3x')
@@ -114,10 +112,11 @@ test('selecting a different family card folds the open tray back in', async ({ p
   await expect(page.locator('.family-tray')).toHaveCount(0)
 })
 
-/** In the open bay: Invert via ADVANCED → select the take → promote the mix into the family. */
+/** In the open bay: Invert via the ADV dropdown → select the take → promote the mix into the family. */
 async function promoteInvertMix(page: Page) {
   await page.getByRole('button', { name: /^adv$/i }).click()
   await page.getByRole('button', { name: /^invert$/i }).click()
+  await page.keyboard.press('Escape') // the dropdown stays open for repeat transforms
   await expect(page.locator('.tree-node')).toHaveCount(1)
   await page.locator('.tree-node').getByRole('button', { name: /^use$/i }).click()
   await page.getByRole('button', { name: /promote mix/i }).click()
@@ -126,14 +125,13 @@ async function promoteInvertMix(page: Page) {
 test('m opens the mutation bay; a promoted mix lands in the tray, not the grid', async ({ page }) => {
   await gotoApp(page)
   await expect(selectedName(page)).toHaveText(SEED_NAMES[0])
-  await page.keyboard.press('m')
-
-  await expect(page.locator('.bay')).toBeVisible()
+  await openBay(page)
   await expect(page.locator('.wb-header')).toContainText(/mutation bay/i)
 
-  // deterministic transform via ADVANCED: an instant tree node
+  // deterministic transform via the ADV dropdown: an instant tree node
   await page.getByRole('button', { name: /^adv$/i }).click()
   await page.getByRole('button', { name: /^invert$/i }).click()
+  await page.keyboard.press('Escape')
   await expect(page.locator('.tree-node')).toHaveCount(1)
   await expect(page.locator('.tree-node .node-badge')).toContainText(/invert/i)
 
@@ -152,7 +150,7 @@ test('m opens the mutation bay; a promoted mix lands in the tray, not the grid',
 test('clicking a card with variants folds its tray out', async ({ page }) => {
   await gotoApp(page)
   // give Ember a variant so it has a tray worth opening
-  await page.keyboard.press('m')
+  await openBay(page)
   await promoteInvertMix(page)
   await page.getByRole('button', { name: /close bay/i }).click()
 
@@ -166,47 +164,86 @@ test('clicking a card with variants folds its tray out', async ({ page }) => {
 
 test('down arrow descends into the open tray; up returns to the anchor', async ({ page }) => {
   await gotoApp(page)
-  await page.keyboard.press('m')
+  await openBay(page)
   await promoteInvertMix(page)
   await page.getByRole('button', { name: /close bay/i }).click()
 
   await page.locator('.motif-card', { hasText: SEED_NAMES[0] }).click() // opens the tray
   await expect(page.locator('.family-tray')).toBeVisible()
 
-  // descend: the origin IS the anchor card, so the cursor lands on the first variant
+  // descend: the cursor enters on the FIRST tray card — the origin's copy,
+  // even though it doubles as the grid anchor (the bar mirrors on both)
   await page.keyboard.press('ArrowDown')
-  await expect(page.locator('.tray-card.selected')).toHaveCount(1)
+  await expect(page.locator('.tray-card.selected .tray-card-name')).toHaveText('ORIGIN')
+  await expect(page.locator('.motif-card.selected .card-name')).toHaveText(SEED_NAMES[0])
+
+  // right walks to the variant, not the next family
+  await page.keyboard.press('ArrowRight')
   await expect(page.locator('.tray-card.selected .tray-card-name')).toContainText('mix')
 
-  // up climbs back out to the anchor card
+  // left walks back to the first card
+  await page.keyboard.press('ArrowLeft')
+  await expect(page.locator('.tray-card.selected .tray-card-name')).toHaveText('ORIGIN')
+
+  // up climbs back out to the anchor card (its tray copy keeps the mirror bar)
   await page.keyboard.press('ArrowUp')
-  await expect(page.locator('.tray-card.selected')).toHaveCount(0)
+  await expect(page.locator('.motif-card.selected .card-name')).toHaveText(SEED_NAMES[0])
+  await expect(page.locator('.tray-card.selected .tray-card-name')).toHaveText('ORIGIN')
+
+  // …and from the anchor the arrows act on the grid again: right folds the tray
+  await page.keyboard.press('ArrowRight')
+  await expect(page.locator('.family-tray')).toHaveCount(0)
+  await expect(page.locator('.motif-card.selected .card-name')).toHaveText(SEED_NAMES[1])
+})
+
+test('f opens a walkable tray with the cursor already inside it', async ({ page }) => {
+  await gotoApp(page)
+  await openBay(page)
+  await promoteInvertMix(page)
+  await page.getByRole('button', { name: /close bay/i }).click()
+
+  await page.keyboard.press('f')
+  await expect(page.locator('.family-tray')).toBeVisible()
+  await expect(page.locator('.tray-card.selected .tray-card-name')).toHaveText('ORIGIN')
+
+  // the cursor is INSIDE the panel: right reaches the variant immediately,
+  // with no ArrowDown needed first
+  await page.keyboard.press('ArrowRight')
+  await expect(page.locator('.tray-card.selected .tray-card-name')).toContainText('mix')
+
+  // f again folds the tray back in from inside
+  await page.keyboard.press('f')
+  await expect(page.locator('.family-tray')).toHaveCount(0)
   await expect(page.locator('.motif-card.selected .card-name')).toHaveText(SEED_NAMES[0])
 })
 
 test('in the mutation bay, space loops the mix and Escape walks out', async ({ page }) => {
   await gotoApp(page)
-  await page.keyboard.press('m')
-  await expect(page.locator('.bay')).toBeVisible()
+  await openBay(page)
 
   await page.keyboard.press(' ')
   await expect(page.locator('.transport-strip .now-name')).toHaveText(SEED_NAMES[0])
   await page.keyboard.press(' ')
   await expect(page.locator('.transport-strip .now-name')).toHaveCount(0)
 
-  // space while typing in the advanced brief stays in the textarea
+  // ESC closes an open ADV dropdown before touching the bay
   await page.getByRole('button', { name: /^adv$/i }).click()
-  const brief = page.getByPlaceholder(/more syncopated/)
+  await expect(page.getByRole('button', { name: /^invert$/i })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: /^invert$/i })).toHaveCount(0)
+  await expect(page.locator('.bay')).toBeVisible()
+
+  // space while typing in the Claude brief stays in the textarea
+  await page.getByRole('button', { name: /^claude$/i }).click()
+  const brief = page.getByPlaceholder(/targeted change/)
   await brief.click()
   await brief.pressSequentially('a b')
   await expect(brief).toHaveValue('a b')
   await expect(page.locator('.transport-strip .now-name')).toHaveCount(0)
 
-  // ESC walks out: blur the field, close the advanced panel, close the bay
+  // ESC walks out: close the Claude popover, then close the bay
   await page.keyboard.press('Escape')
-  await expect(page.locator('.bay')).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(page.locator('.advanced-panel')).toHaveCount(0)
+  await expect(page.getByPlaceholder(/targeted change/)).toHaveCount(0)
   await expect(page.locator('.bay')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.locator('.bay')).toHaveCount(0)
@@ -215,14 +252,14 @@ test('in the mutation bay, space loops the mix and Escape walks out', async ({ p
 
 test('promoting a tray variant makes it the family face in the grid', async ({ page }) => {
   await gotoApp(page)
-  await page.keyboard.press('m')
+  await openBay(page)
   await promoteInvertMix(page)
   await page.getByRole('button', { name: /close bay/i }).click()
 
   await page.keyboard.press('f')
   const tray = page.locator('.family-tray')
   await expect(tray.locator('.tray-card')).toHaveCount(2)
-  await tray.getByRole('button', { name: /^promote$/i }).click()
+  await tray.getByRole('button', { name: /^use$/i }).click()
 
   // the grid card now faces the promoted variant
   await expect(

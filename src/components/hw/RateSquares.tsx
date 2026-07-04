@@ -32,7 +32,7 @@ export function Stars({ rating }: { rating: number }) {
   return (
     <span className="tray-stars">
       {[1, 2, 3, 4, 5].map((r) => (
-        <StarIcon key={r} size={9} weight="fill" className={r > rating ? 'off' : undefined} />
+        <StarIcon key={r} size={9} className={r > rating ? 'off' : undefined} />
       ))}
     </span>
   )

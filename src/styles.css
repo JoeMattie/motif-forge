@@ -355,14 +355,17 @@ mark.hk,
 .knob-wrap {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 5px;
   user-select: none;
-  /* fixed footprint — varying caption widths must not shift the row */
-  width: 66px;
 }
 .knob-label {
   white-space: nowrap;
+}
+/* dimmed + inert while a dice toggle overrides the knob's value */
+.knob-wrap.disabled {
+  opacity: 0.4;
+  pointer-events: none;
 }
 .knob-slider {
   background-color: var(--chip-on-bg) !important;
@@ -616,6 +619,16 @@ mark.hk,
   padding: 14px 24px 10px;
   flex: none;
 }
+/* Every boxed control in the header sits at one 26px height: keys, seg
+   switches (20px label + 2px padding + 1px border each side), toggle, icon. */
+.wb-header .wb-btn,
+.wb-header .wb-action,
+.wb-header .htoggle {
+  height: 26px;
+}
+.wb-header .wb-action {
+  width: 26px;
+}
 .brand {
   font-weight: 700;
   font-size: 15px;
@@ -637,9 +650,43 @@ mark.hk,
   flex: none;
 }
 
-.view-pills {
-  display: flex;
-  gap: 6px;
+/* Micro-label + seg switch pair (the header's VIEW legend). */
+.header-seg-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* Mantine Tabs, skinned as the header's view switcher (classes stamped by the
+   theme): flat uppercase keys on the panel, accent underline when active. */
+.wb-tabs-list {
+  gap: 2px;
+}
+.wb-tabs-list::before {
+  display: none;
+}
+.wb-tab {
+  height: 26px;
+  padding: 0 12px;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--label);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: color 100ms, border-color 100ms;
+}
+.wb-tab:hover {
+  background: transparent;
+  border-bottom-color: transparent;
+  color: var(--ink);
+}
+.wb-tab[data-active],
+.wb-tab[data-active]:hover {
+  border-bottom-color: var(--accent);
+  color: var(--ink);
+  font-weight: 700;
 }
 
 /* Mantine SegmentedControl, skinned as a hardware seg switch (classes stamped
@@ -650,13 +697,22 @@ mark.hk,
   border-radius: 7px;
   padding: 2px;
 }
+/* dimmed + inert while disabled (e.g. a dice toggle overrides the value).
+   NB: Mantine stamps data-disabled={disabled} verbatim, so a seg given
+   disabled={false} still carries data-disabled="false" — a bare presence
+   selector ([data-disabled]) would match it. Key off the inputs instead. */
+.wb-seg:has(input:disabled) {
+  opacity: 0.5;
+  pointer-events: none;
+}
 .wb-seg-indicator {
   background: var(--chip-on-bg);
   border-radius: 5px;
   box-shadow: none;
 }
 .wb-seg-label {
-  padding: 5px 12px;
+  padding: 0 12px;
+  height: 20px;
   color: var(--label);
   font-size: 9.5px;
   letter-spacing: 0.1em;
@@ -669,6 +725,10 @@ mark.hk,
 .wb-seg-label[data-active] {
   color: var(--chip-on-text);
   font-weight: 700;
+}
+/* wildcard options (GROOVE's SURPRISE) read in accent orange */
+.wb-seg-accent {
+  color: var(--accent);
 }
 
 /* Mantine Chip skinned as a workbench chip (classes stamped by the theme).
@@ -817,36 +877,100 @@ main {
   gap: 20px;
   align-items: flex-start;
 }
-/* key + mode side by side, tempo stacked underneath */
-.gen-knob-stack {
+/* ---------- circle of fifths (hand-rolled key dial + key-signature icon) ---------- */
+
+.gen-key-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cof.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.cof-wedge {
+  fill: var(--surface);
+  stroke: var(--surface-border);
+  cursor: pointer;
+  outline: none;
+  transition: filter 100ms;
+}
+.cof-wedge:hover {
+  filter: brightness(1.06);
+}
+.cof-wedge:focus-visible {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.cof-wedge[data-selected='true'] {
+  fill: var(--chip-on-bg);
+}
+.cof-major {
+  fill: var(--label);
+  font-size: 9.5px;
+  font-weight: 600;
+  pointer-events: none;
+  user-select: none;
+}
+.cof-major[data-selected='true'] {
+  fill: var(--chip-on-text);
+  font-weight: 700;
+}
+.cof-minor {
+  fill: var(--label-dim);
+  font-size: 6.5px;
+  pointer-events: none;
+  user-select: none;
+}
+.keysig line {
+  stroke: var(--label-dim);
+  stroke-width: 1;
+}
+.keysig text {
+  fill: var(--ink);
+  font-size: 20px;
+  user-select: none;
+}
+/* the 𝄞 glyph is drawn ~2.5× staff height by the system music font */
+.keysig .keysig-clef {
+  font-size: 60px;
+}
+
+/* a left-aligned column of brief controls (key/mode; tempo/bars) */
+.gen-stack {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 14px;
 }
-.gen-knob-row {
-  display: flex;
-  gap: 20px;
-  align-items: flex-start;
-}
-/* engine gets its own divided section */
+/* engine gets its own divided section: vertical selector, with the engine's
+   auxiliary control (groove presets, neural status) docked to its right */
 .gen-engine {
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  flex-direction: row;
+  align-items: flex-start;
   justify-content: flex-start;
-  gap: 8px;
+  gap: 14px;
 }
 /* non-knob brief controls (tempo slider, bars seg) with a knob-style caption */
 .gen-ctl {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
-.gen-tempo-row {
-  display: flex;
+/* caption rows share one height whether or not they carry a dice toggle, so
+   neighboring columns (ENGINE vs GROOVE) start their controls at the same y */
+.gen-ctl > .knob-label {
+  display: inline-flex;
   align-items: center;
+  min-height: 20px;
+}
+/* tempo slider with its free-form BPM readout underneath */
+.gen-tempo-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
 }
 .gen-divider {
@@ -860,6 +984,40 @@ main {
   flex-direction: column;
   gap: 7px;
   min-width: 0;
+}
+/* parts + scale toggles, one dice per headed group */
+.gen-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  align-items: flex-start;
+}
+.gen-part-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+/* dice tickbox: quiet by default, accent + filled when armed */
+.gen-dice-wrap {
+  display: inline-flex;
+}
+.gen-dice[data-on] {
+  color: var(--accent);
+}
+.gen-dice[data-on]:hover {
+  color: var(--accent);
+}
+.gen-dice:disabled,
+.gen-dice[data-disabled] {
+  opacity: 0.4;
+  background: none;
+}
+/* caption row holding a dice next to the title */
+.gen-label-dice {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 .gen-actions {
   display: flex;
@@ -875,15 +1033,19 @@ main {
   min-width: 76px;
 }
 
-/* progress strip docked under the generation module (hidden with the collapsed panel) */
+/* LCD progress strip (hidden with the collapsed panel) */
 .gen-progress {
   position: relative;
   height: 24px;
-  margin: 0 18px 12px;
   border-radius: 6px;
   background: var(--lcd-bg);
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.45);
   overflow: hidden;
+}
+/* docked in the top strip beside the DEFAULT key, filling the leftover width */
+.gen-strip .gen-progress {
+  flex: 1;
+  min-width: 0;
 }
 .gen-progress-fill {
   position: absolute;
@@ -948,7 +1110,8 @@ main {
   /* capped max keeps cards from getting super wide on big screens */
   grid-template-columns: repeat(auto-fill, minmax(280px, 380px));
   justify-content: start;
-  gap: 12px;
+  /* row gap leaves air for the taller stack-lip layers hanging below cards */
+  gap: 18px 12px;
   align-items: start;
 }
 
@@ -1006,13 +1169,15 @@ main {
 }
 
 /* Family stack indicator: layered card edges peeking below the bottom,
-   like a deck of takes sitting under the face. */
+   like a deck of takes sitting under the face. Each layer starts 1px below
+   the edge above it so the card's own border/outline stays on top of the
+   stack instead of merging into it. */
 .stack-lip {
   position: absolute;
   left: 6px;
   right: 6px;
-  bottom: -4px;
-  height: 4px;
+  bottom: -10px;
+  height: 8px;
   background: var(--lip-bg);
   border: 1px solid var(--module-border);
   border-top: none;
@@ -1023,8 +1188,8 @@ main {
   position: absolute;
   left: 7px;
   right: 7px;
-  bottom: -4px;
-  height: 3px;
+  bottom: -7px;
+  height: 6px;
   background: var(--lip-bg);
   border: 1px solid var(--module-border);
   border-top: none;
@@ -1316,6 +1481,14 @@ main {
   color: var(--chip-on-text);
   border-color: transparent;
   font-weight: 700;
+}
+.promote-chip:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+/* Inline anchor so tooltips + popovers still work around disabled buttons. */
+.chip-tip-wrap {
+  display: inline-flex;
 }
 .tray-stars {
   color: var(--ink);
@@ -1656,21 +1829,12 @@ main {
   color: var(--ink);
 }
 
+/* full-width single-card stack (the KEY modal) */
 .about {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: 1fr;
   gap: 12px;
   align-items: start;
-}
-@media (max-width: 1200px) {
-  .about {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-@media (max-width: 700px) {
-  .about {
-    grid-template-columns: 1fr;
-  }
 }
 .about-module {
   padding: 12px 14px;
@@ -1683,13 +1847,41 @@ main {
   text-transform: uppercase;
   color: var(--label);
 }
-.about p {
+
+/* ABOUT modal: vertical tab rail on the left, prose panels on the right.
+   Overrides the header's horizontal wb-tab underline skin for this layout. */
+.about-tabs .wb-tabs-list {
+  gap: 4px;
+  min-width: 140px;
+  padding-right: 12px;
+  border-right: 1px solid var(--module-border);
+}
+.about-tabs .wb-tab {
+  width: 100%;
+  justify-content: flex-start;
+  border-bottom: none;
+  border-left: 2px solid transparent;
+  transition: color 100ms, border-color 100ms;
+}
+.about-tabs .wb-tab[data-active],
+.about-tabs .wb-tab[data-active]:hover {
+  border-left-color: var(--accent);
+}
+.about-panel {
+  padding: 2px 6px 4px 18px;
+  min-height: 300px;
+  max-width: 640px;
+}
+
+.about p,
+.about-panel p {
   margin: 0 0 8px;
   font-size: 12.5px;
   line-height: 1.55;
   color: var(--ink-dim);
 }
-.about p:last-child {
+.about p:last-child,
+.about-panel p:last-child {
   margin-bottom: 0;
 }
 .about-term {
@@ -1726,6 +1918,9 @@ main {
   position: sticky;
   top: 0;
   z-index: 5;
+  width: 100%;
+  max-width: 720px;
+  align-self: center;
 }
 .mix-chip {
   background: var(--surface);
@@ -1748,12 +1943,6 @@ main {
   padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-.bay-head-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
   gap: 10px;
 }
 .bay-title {
@@ -1809,9 +1998,8 @@ main {
   flex-wrap: wrap;
 }
 
-.llm-section {
-  border-top: 1px solid var(--module-border);
-  padding-top: 10px;
+/* the ADV dropdown: rows of part-scoped transform keys */
+.advanced-pop {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1870,6 +2058,14 @@ main {
   text-transform: uppercase;
   margin-left: auto;
   white-space: nowrap;
+}
+/* sound dice sits immediately left of the instrument label — it takes over
+   the auto margin so the pair stays glued together on the right */
+.origin-head .sound-dice {
+  margin-left: auto;
+}
+.origin-head .sound-dice ~ .origin-inst {
+  margin-left: 0;
 }
 
 /* Tree layout: siblings sit SIDE BY SIDE in a row; a node's children hang in
@@ -1947,17 +2143,18 @@ main {
   gap: 5px;
   cursor: pointer;
 }
-/* every generation smaller than its parent (origin cell is the largest) */
+/* every generation smaller than its parent (origin cell is the largest);
+   floors keep the MUTATE · CLAUDE · ADV chip row from overflowing */
 .tree-node.depth-1 {
-  width: 156px;
+  width: 176px;
 }
 .tree-node.depth-2 {
-  width: 122px;
+  width: 162px;
   padding: 5px;
   gap: 4px;
 }
 .tree-node.depth-3 {
-  width: 100px;
+  width: 154px;
   padding: 4px;
   gap: 3px;
 }
@@ -1997,32 +2194,22 @@ main {
   letter-spacing: 0.1em;
   font-weight: 700;
   text-transform: uppercase;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.node-badge.var {
-  color: var(--accent);
-}
-.node-badge.var-drums {
-  color: var(--yellow-text);
-}
 .node-badge.transform {
   color: var(--green);
+}
+.node-badge.sound {
+  color: var(--accent);
 }
 .node-foot {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.advanced-panel {
-  /* opens ABOVE the part row's scroll strip */
-  border-bottom: 1px solid var(--module-border);
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  flex-wrap: wrap;
 }
 
 /* Collapsed (compact) track: the origin box shows the take currently in the
@@ -2348,14 +2535,19 @@ main {
   font-size: 12px;
 }
 
-.toast {
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  color: var(--ink);
+/* Generation result notifications (Mantine), skinned as surface cards; the
+   colored status bar (accent/red) comes from Mantine's own ::before strip. */
+.wb-note {
   background: var(--surface);
   border: 1px solid var(--surface-border);
   border-radius: 6px;
-  padding: 5px 10px;
-  cursor: pointer;
-  font-family: inherit;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+.wb-note-text {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+.wb-note-close {
+  color: var(--label-dim);
 }

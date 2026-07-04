@@ -55,6 +55,12 @@ export const theme = createTheme({
         label: 'wb-seg-label',
       },
     },
+    Tabs: {
+      classNames: { list: 'wb-tabs-list', tab: 'wb-tab' },
+    },
+    Notification: {
+      classNames: { root: 'wb-note', description: 'wb-note-text', closeButton: 'wb-note-close' },
+    },
     Drawer: {
       defaultProps: { withCloseButton: false },
       classNames: { content: 'wb-drawer', body: 'wb-drawer-body' },
@@ -79,6 +85,9 @@ export const theme = createTheme({
     NumberInput: { defaultProps: { size: 'sm' } },
     Select: {
       defaultProps: { size: 'sm', allowDeselect: false, comboboxProps: { withinPortal: true } },
+    },
+    Autocomplete: {
+      defaultProps: { size: 'sm', comboboxProps: { withinPortal: true } },
     },
     Tooltip: {
       defaultProps: { withArrow: true, openDelay: 300, multiline: true, maw: 340 },

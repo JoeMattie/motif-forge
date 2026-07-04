@@ -144,7 +144,7 @@ function RootGroup({ family }: { family: Family }) {
               <Button
                 className="accent"
                 onClick={() => dispatch({ type: 'SET_MUTATION_TARGET', id: root.id })}
-                rightSection={<ArrowRightIcon size={10} weight="bold" />}
+                rightSection={<ArrowRightIcon size={10} />}
               >
                 Transform for new track
               </Button>
@@ -159,7 +159,7 @@ function RootGroup({ family }: { family: Family }) {
               className="derive-slot"
               onClick={() => dispatch({ type: 'SET_MUTATION_TARGET', id: root.id })}
             >
-              <PlusIcon size={11} weight="bold" /> Derive a variant for the next track
+              <PlusIcon size={11} /> Derive a variant for the next track
             </button>
           </div>
         </div>
@@ -297,7 +297,7 @@ export function ConceptView() {
                       setConceptId(concepts.find((x) => x.id !== c.id)?.id ?? null)
                   }}
                 >
-                  <XIcon size={10} weight="bold" />
+                  <XIcon size={10} />
                 </ActionIcon>
               </Tooltip>
             )}
@@ -319,7 +319,7 @@ export function ConceptView() {
           <Button
             className="dashed"
             onClick={() => setAdding(true)}
-            leftSection={<PlusIcon size={10} weight="bold" />}
+            leftSection={<PlusIcon size={10} />}
           >
             New
           </Button>
@@ -344,7 +344,7 @@ export function ConceptView() {
             {bestRating > 0 && <> · best {'★'.repeat(bestRating)}</>}
           </span>
           <span className="spacer" />
-          <Tooltip label="Play every family's promoted take back to back">
+          <Tooltip label="Play every family's used take back to back">
             <button type="button" className="play-all" onClick={playAll}>
               <PlayRound size="md" playing={playingAll} onClick={playAll} />
               Play all in sequence

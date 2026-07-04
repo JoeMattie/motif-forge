@@ -33,9 +33,9 @@ export const PlayRound = forwardRef<HTMLButtonElement, PlayRoundProps>(function 
       {loading ? (
         '…'
       ) : playing ? (
-        <StopIcon size={glyph} weight="fill" />
+        <StopIcon size={glyph} />
       ) : (
-        <PlayIcon size={glyph} weight="fill" />
+        <PlayIcon size={glyph} />
       )}
     </button>
   )

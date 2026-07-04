@@ -6,6 +6,7 @@ import {
   createDrumKit,
   createSmplrInstrument,
   createToneSynth,
+  SCHED_LOOKAHEAD,
   type Instrument,
 } from './instruments'
 
@@ -16,8 +17,11 @@ export interface PlayOptions {
   sound: Sound // used for motifs without parts
   forceSound: boolean // ignore parts and play everything through `sound`
   loop?: boolean // restart from beat 0 when the motif ends (A/B audition)
-  fromBeat?: number // start playback mid-motif (swap-on-bar)
 }
+
+// swap() cutover distance: must sit beyond the instruments' trigger lookahead
+// so every note it cancels is still cancellable (anything closer is committed).
+const SWAP_CUTOVER = SCHED_LOOKAHEAD + 0.05
 
 interface EngineSnapshot {
   playingMotifId: string | null
@@ -53,6 +57,11 @@ class AudioEngine {
   private totalBeats = 0
   private looping = false
   private endTimer: number | null = null
+  // Loop state lives on the instance (not in play()'s closure) so swap() can
+  // redirect future iterations to a new motif mid-flight.
+  private loopMotif: Motif | null = null
+  private loopOpts: PlayOptions | null = null
+  private loopScheduledUntil = 0 // context time covered by committed iterations
 
   private ensureCtx(): AudioContext {
     if (!this.ctx) {
@@ -112,10 +121,9 @@ class AudioEngine {
     void Promise.all(active.map((a) => a.inst.ready)).then(() => {
       if (token !== this.playToken) return // superseded by another play/stop
 
-      const fromBeat = Math.max(0, Math.min(opts.fromBeat ?? 0, this.totalBeats))
       const t0 = ctx.currentTime + 0.08
       this.startTime = t0
-      this.startBeat = fromBeat
+      this.startBeat = 0
       // Un-mute cached instruments right before their first note; anything
       // still decaying from a previous stop stays silent until then.
       for (const a of active) {
@@ -129,30 +137,36 @@ class AudioEngine {
         motif,
         opts.tempo,
         t0,
-        fromBeat,
+        0,
       )
-      if (opts.metronome)
-        scheduleMetronome(ctx, playGain, this.totalBeats - fromBeat, bpb, opts.tempo, t0)
+      if (opts.metronome) scheduleMetronome(ctx, playGain, this.totalBeats, bpb, opts.tempo, t0)
       if (opts.drone) scheduleDrone(ctx, playGain, motif.key, endTime - t0, t0)
 
       this.looping = !!opts.loop
+      this.loopMotif = motif
+      this.loopOpts = opts
+      this.loopScheduledUntil = endTime
       if (opts.loop) {
         // Gapless loop: keep the instruments alive and schedule each next
         // iteration ~300ms before the boundary, at the exact WebAudio end
         // timestamp — no teardown/rebuild, no setTimeout jitter in the audio.
         // getPositionBeats wraps by modulo, so the playhead follows for free.
+        // Each iteration re-reads loopMotif/loopOpts so swap() takes effect.
         const scheduleNext = (iterStart: number) => {
           if (token !== this.playToken) return
+          const m = this.loopMotif!
+          const o = this.loopOpts!
           const iterEnd = scheduleMotif(
             active.map((a) => a.inst),
-            motif,
-            opts.tempo,
+            m,
+            o.tempo,
             iterStart,
             0,
           )
-          if (opts.metronome)
-            scheduleMetronome(ctx, playGain, this.totalBeats, bpb, opts.tempo, iterStart)
-          if (opts.drone) scheduleDrone(ctx, playGain, motif.key, iterEnd - iterStart, iterStart)
+          if (o.metronome)
+            scheduleMetronome(ctx, playGain, this.totalBeats, bpb, o.tempo, iterStart)
+          if (o.drone) scheduleDrone(ctx, playGain, m.key, iterEnd - iterStart, iterStart)
+          this.loopScheduledUntil = iterEnd
           this.endTimer = window.setTimeout(
             () => scheduleNext(iterEnd),
             Math.max(0, (iterEnd - ctx.currentTime - 0.3) * 1000),
@@ -177,6 +191,53 @@ class AudioEngine {
     })
   }
 
+  /**
+   * Replace the looping motif's notes mid-flight (the bay mix when a take
+   * selection changes): notes scheduled at/after the cutover (~SWAP_CUTOVER s
+   * out) are cancelled, whatever is already sounding rings out naturally, and
+   * the new motif's notes take over on the same beat grid — startTime/startBeat
+   * are untouched, so the playhead never jumps. Falls back to a fresh play()
+   * when nothing compatible (same id, length, tempo, part count) is looping.
+   */
+  swap(motif: Motif, opts: PlayOptions): void {
+    const ctx = this.ctx
+    const spb = 60 / opts.tempo
+    const partCount =
+      !opts.forceSound && motif.parts && motif.parts.length > 0 ? motif.parts.length : 1
+    if (
+      !ctx ||
+      !this.looping ||
+      this.snapshot.loading ||
+      this.snapshot.playingMotifId !== motif.id ||
+      motif.bars * beatsPerBar(motif.timeSig) !== this.totalBeats ||
+      Math.abs(spb - this.secondsPerBeat) > 1e-9 ||
+      partCount !== this.active.length
+    ) {
+      this.play(motif, opts)
+      return
+    }
+
+    this.loopMotif = motif
+    this.loopOpts = opts
+
+    const insts = this.active.map((a) => a.inst)
+    const tc = ctx.currentTime + SWAP_CUTOVER
+    for (const inst of insts) inst.cancelAfter(tc)
+
+    // Beat position at the cutover, on the unchanged grid.
+    const raw = this.startBeat + (tc - this.startTime) / spb
+    const pos = ((raw % this.totalBeats) + this.totalBeats) % this.totalBeats
+    // Rest of the sounding iteration. Its metronome/drone are already
+    // committed raw WebAudio (uncancellable) and grid-identical — notes only.
+    const iterEnd = scheduleMotif(insts, motif, opts.tempo, tc, pos)
+    // The loop chain schedules ~300ms ahead, so the next iteration may already
+    // be committed; its old notes were cancelled above — re-lay the new ones.
+    // Later iterations pick up loopMotif via the pending scheduleNext.
+    if (this.loopScheduledUntil > iterEnd + 1e-3) {
+      scheduleMotif(insts, motif, opts.tempo, iterEnd, 0)
+    }
+  }
+
   stop(): void {
     this.stopInternal()
     if (this.snapshot.playingMotifId !== null) {
@@ -193,6 +254,8 @@ class AudioEngine {
   private stopInternal(): void {
     this.playToken++
     this.looping = false
+    this.loopMotif = null
+    this.loopOpts = null
     if (this.endTimer !== null) {
       clearTimeout(this.endTimer)
       this.endTimer = null

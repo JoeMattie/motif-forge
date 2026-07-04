@@ -36,3 +36,12 @@ export function useAnthropicKey() {
 export function getAnthropicKey(): string {
   return readLocalStorageValue<string>({ key: ANTHROPIC_KEY_KEY, defaultValue: '' })
 }
+
+/**
+ * Whether Claude-powered features can run: a user-supplied key, or the dev
+ * server's proxy fallback. Reactive — flips as soon as the key is saved.
+ */
+export function useClaudeReady(): boolean {
+  const [key] = useAnthropicKey()
+  return key.trim() !== '' || import.meta.env.DEV
+}

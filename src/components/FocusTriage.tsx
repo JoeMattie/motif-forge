@@ -141,7 +141,7 @@ export function FocusTriage() {
         <div className="focus-controls module">
           <div className="focus-transport">
             <button type="button" className="play-round lg" title="Previous (←)" onClick={() => move(-1)}>
-              <CaretLeftIcon size={16} weight="bold" />
+              <CaretLeftIcon size={16} />
             </button>
             <Tooltip label="Play/stop (Space)">
               <PlayRound
@@ -152,7 +152,7 @@ export function FocusTriage() {
               />
             </Tooltip>
             <button type="button" className="play-round lg" title="Next (→)" onClick={() => move(1)}>
-              <CaretRightIcon size={16} weight="bold" />
+              <CaretRightIcon size={16} />
             </button>
           </div>
           <div className="focus-caption">Prev · Play / Stop · Next</div>
@@ -175,7 +175,7 @@ export function FocusTriage() {
               className="danger-text"
               aria-label="Discard"
               onClick={discard}
-              leftSection={<XIcon size={11} weight="bold" />}
+              leftSection={<XIcon size={11} />}
             >
               <span>
                 Discard
@@ -184,7 +184,7 @@ export function FocusTriage() {
             <Button
               aria-label="Mutate"
               onClick={() => dispatch({ type: 'SET_MUTATION_TARGET', id: face.id })}
-              leftSection={<ArrowsClockwiseIcon size={11} weight="bold" />}
+              leftSection={<ArrowsClockwiseIcon size={11} />}
             >
               <span>
                 <Mark className="hk">M</Mark>utate
@@ -220,11 +220,11 @@ export function FocusTriage() {
                 <div className="q-label">
                   {isCurrent ? (
                     <>
-                      <CircleIcon size={6} weight="fill" /> {f.face.name}
+                      <CircleIcon size={6} /> {f.face.name}
                     </>
                   ) : isDone ? (
                     <>
-                      <CheckIcon size={8} weight="bold" /> {'★'.repeat(f.face.rating)}
+                      <CheckIcon size={8} /> {'★'.repeat(f.face.rating)}
                     </>
                   ) : (
                     f.face.name

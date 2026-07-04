@@ -15,19 +15,20 @@ npm run dev        # http://localhost:5173
 
 That's it for the default experience — the **INSTANT** generation engine, playback, triage, deterministic mutation, the library, and MIDI/WAV export all run fully offline with no credentials. An Anthropic API key is only needed for the **CLAUDE** engine and LLM mutations (see [API access](#api-access)), and the **NEURAL** engine needs a one-time model download.
 
-## Three generation engines
+## Four generation engines
 
 The generation panel's ENGINE switch selects how candidates are made:
 
-- **INSTANT** (default) — fully offline, deterministic, immediate, free. A constrained random walk composes single melodic lines in scale-degree space (always in-key), pulled toward a contour template (arch / ascend / descend / zigzag / flat) with leap-recovery and per-beat rhythm archetypes on a 16th grid. Once you've kept some motifs (rating ★3+), a genetic algorithm joins in: bar-boundary crossover between keepers plus small in-scale mutations, mixed with fresh "immigrants" for diversity. Every candidate stores its PRNG seed, so any motif is reproducible.
-- **NEURAL** — an on-device transformer ([SkyTNT midi-model](https://github.com/SkyTNT/midi-model) `tv2o-medium`, int8-quantized) running in a Web Worker via `onnxruntime-web` on **WebGPU** (no WASM fallback — without WebGPU the app stays on INSTANT + CLAUDE). Opt-in one-time download of ~226 MB, streamed with progress, sha256-verified against a pinned manifest, and cached in OPFS (removable from the panel). Offline after that. A share of each batch continues one of your keepers — the neural analog of the GA. The tokenizer is a byte-identical TypeScript port of the Python reference, verified against golden fixtures.
-- **CLAUDE** — the Anthropic API (`claude-sonnet-4-6`) as composer. The only engine that honors the free-text brief, multi-part textures, sound-designed synth presets, and drum parts. Runs on your own API key (KEY in the header; see [API access](#api-access)) in chunks of ≤5 motifs, two concurrent.
+- **INSTANT** (default) — fully offline, deterministic, immediate, free. Candidates are bred, not just rolled: a population seeded from constrained random walks (in-key scale-degree motion pulled toward a contour template — arch / ascend / descend / zigzag / flat — with leap-recovery and per-beat rhythm archetypes on a 16th grid), plus crossovers and mutants of your kept motifs (★3+) once you have some, evolves through tournament selection against a Gaussian multi-feature musical fitness (after the [M6(GPT)3 paper](https://arxiv.org/abs/2409.12638): stepwise motion, strong-beat coverage, repetition, tonal anchoring…) — and only the fittest mutually-distinct survivors reach the grid. Your ratings stay the final say; the score only decides what's worth your ears. The RHYTHM toggle lays a seeded probabilistic drum groove (per-time-signature kick/snare probability tables, melody-matched hat density, tom fills) under each line. Every batch stores its PRNG seed, so results are reproducible.
+- **GENETIC** — a port of ga-riffs: each riff is one evolutionary run over binary rhythm genomes (one bit per 16th step) scored by a groove fitness — target density, accent-grid alignment, syncopation appetite — then pitched in-key from a root-and-fifth-heavy palette. GROOVE presets (techno / organic / tribal) set the fitness weights; SURPRISE synthesizes a fresh preset per riff. Offline, seeded, reproducible; unlike INSTANT it never reads your library.
+- **NEURAL** — an on-device transformer ([SkyTNT midi-model](https://github.com/SkyTNT/midi-model) `tv2o-medium`, int8-quantized) running in a Web Worker via `onnxruntime-web` on **WebGPU** (no WASM fallback — without WebGPU the app stays on the offline engines + CLAUDE). Opt-in one-time download of ~226 MB, streamed with progress, sha256-verified against a pinned manifest, and cached in OPFS (removable from the panel). Offline after that. A share of each batch continues one of your keepers — the neural analog of INSTANT's breeding — and finished batches are re-ranked best-first in the grid by the same musical fitness that drives INSTANT. The tokenizer is a byte-identical TypeScript port of the Python reference, verified against golden fixtures.
+- **CLAUDE** — the Anthropic API (`claude-sonnet-4-6`) as composer. The only engine that honors the free-text brief, multi-part textures, and sound-designed synth presets. Runs on your own API key (KEY in the header; see [API access](#api-access)) in chunks of ≤5 motifs, two concurrent.
 
-All three engines funnel through the same validation and land in the same triage queue; batches render as pulsing placeholder cards so you can stack requests and keep triaging.
+All four engines funnel through the same validation and land in the same triage queue; batches render as pulsing placeholder cards so you can stack requests and keep triaging.
 
 ## Features
 
-- **Constraint-brief generation** — key/mode, tempo, bars, in-scale strict vs chromatic, texture (lead line with light harmony vs free polyphony), optional rhythm/drums part, an EXTRA toggle for 4–6 instrument parts, free-text direction (contour, emotional intent, references), and a song-concept tag. Or hit **🎲 Surprise me** for free-rein motifs where the model picks its own key, tempo, texture, and instrumentation. Every candidate is validated (pitch range 36–96, bar bounds, ≤8 simultaneous voices, ≥3 notes); invalid ones are dropped with a count, out-of-scale notes get a warning badge instead of being rejected. Drum parts use GM drum pitches, play through a built-in synthesized kit, and export on MIDI channel 9.
+- **Constraint-brief generation** — key (picked on an SVG circle-of-fifths dial) and mode, tempo, bars, in-scale strict vs chromatic, texture (lead line with light harmony vs free polyphony), optional rhythm/drums part (composed by CLAUDE/NEURAL, laid as a seeded probabilistic groove by INSTANT), an EXTRA toggle for 4–6 instrument parts, free-text direction (contour, emotional intent, references), and a song-concept tag. Or hit **🎲 Surprise me** for free-rein motifs where the model picks its own key, tempo, texture, and instrumentation. Every candidate is validated (pitch range 36–96, bar bounds, ≤8 simultaneous voices, ≥3 notes); invalid ones are dropped with a count, out-of-scale notes get a warning badge instead of being rejected. Drum parts use GM drum pitches, play through a built-in synthesized kit, and export on MIDI channel 9.
 - **Families** — a motif plus all its lineage descendants form a family, and the triage grid shows exactly **one card per family** (its promoted "face"), so mutating never inflates the pool you're triaging. Variants live in a fold-out tray under the card (`F`); promoting (`P`) picks which member fronts the family. Filters, triage progress, and concept tags all operate family-wide.
 - **Audition** — piano-roll LCD thumbnails with a selectable sound: plain polysynth by default (deliberately neutral, so you judge the melodic bones) or sampled piano / e-piano / marimba / strings via [smplr](https://github.com/danigb/smplr) (CDN-fetched on first use, then cached). Multi-part motifs route each part to its own instrument; a "force" toggle auditions everything through the picked sound. Moving playhead synced to the audio clock, metronome, root-note drone, global tempo override.
 - **Two triage modes** — the grid, or a **Focus** deck: one large LCD, a prev/play/next cluster, a 1–5 rate keypad with auto-advance, and a queue strip. Both are keyboard-first, built to get through 100 candidates fast:
@@ -45,7 +46,7 @@ All three engines funnel through the same validation and land in the same triage
 
 - **Deterministic transforms** — applied instantly client-side: inversion, retrograde, retrograde-inversion, transposition, augmentation/diminution, mode swap via scale-degree remapping, octave displacement of selected notes. Every child records its parent and the transformation applied — the store *is* the lineage graph.
 - **LLM mutations** — free-text direction ("keep the first bar intact but resolve differently", "add a drum groove"), a **lock rhythm** option that freezes the parent's note timings so only pitches change, and a mutation-side **🎲 Surprise me**.
-- **Mutation Bay** — a per-part variation workspace that slides up over any view (`m`). Each part gets its own row: MUTATE fires an instant LLM batch on *that part only* with every other part locked note-for-note; ADVANCED adds part-scoped deterministic transforms and a custom brief. Results nest rightward as a tree; `Enter` selects a take per part, `Space` loops the composite mix, and changing a selection mid-loop swaps it in on the next bar boundary. PROMOTE MIX adds the assembled composite to the family; REBASE and PRUNE keep the tree tidy. Variation trees persist alongside everything else.
+- **Mutation Bay** — a per-part variation workspace that slides up over any view (`m`). Each part gets its own row of take cards, and every card carries three keys: **MUTATE** evolves one instant offline take per press (seeded in-scale edits from the same genetic operators as INSTANT; rhythm-only ops on drum parts), **CLAUDE** asks for a targeted change in plain text and runs one LLM take on *that part only* with every other part locked note-for-note, and **ADV** chains part-scoped deterministic transforms. A **sound dice** (`s`) on each track header re-rolls the part onto a random other instrument without touching its notes. Results nest rightward as a tree; `Enter` selects a take per part, `Space` loops the composite mix, and changing a selection mid-loop hot-swaps it in on the same beat grid — pending notes cancel, sounding notes ring out. PROMOTE MIX adds the assembled composite to the family; REBASE and PRUNE keep the tree tidy. Variation trees persist alongside everything else.
 - **Leitmotif library & concepts** — the Library gates by rating, filters by concept, and exports all promoted takes as .MID in one click. The Concepts view is a leitmotif desk: per-root variant trays, derived variants tagged with the track they were transformed for, play-all-in-sequence, and a TRANSFORM FOR NEW TRACK shortcut into the bay. Everything — motifs, ratings, families, concepts, bay trees, mid-triage state — persists in IndexedDB; discard is a soft flag, so a refresh mid-triage loses nothing.
 - **Export** — any motif as a Standard MIDI File (format 0, 480 TPQN, parts mapped to channels with GM program changes, drums on channel 9) or as a WAV rendered offline through the exact same instrument adapters as live playback — mixed Tone.js + sampled parts render in a single pass.
 
@@ -94,7 +95,7 @@ Vitest, Playwright, and Biome are dev-only; runtime dependencies stay minimal.
 
 ## Architecture
 
-Vite + React 19 + TypeScript strict. Runtime deps: `react`/`react-dom`, `@mantine/core`/`@mantine/hooks` (UI), `@phosphor-icons/react` (icons), `tone` + `smplr` (playback instruments), `onnxruntime-web` (neural engine). The MIDI writer, WAV encoder, and IndexedDB wrapper are hand-rolled from spec by design.
+Vite + React 19 + TypeScript strict. Runtime deps: `react`/`react-dom`, `@mantine/core`/`@mantine/hooks`/`@mantine/notifications` (UI), `@phosphor-icons/react` (icons), `tone` + `smplr` (playback instruments), `onnxruntime-web` (neural engine). The MIDI writer, WAV encoder, and IndexedDB wrapper are hand-rolled from spec by design.
 
 ```
 src/
@@ -107,7 +108,10 @@ src/
   api/           Anthropic client, prompt builders, JSON parsing, batch queue
   generation/
     symbolic/    INSTANT engine: seeded PRNG, constrained random walk,
-                 genetic algorithm over keepers
+                 Gaussian multi-feature fitness, GA evolution over keepers,
+                 probabilistic drum grooves
+    genetic/     GENETIC engine: rhythm-genome GA + in-key pitch assignment
+                 (ga-riffs port)
     neural/      NEURAL engine: tokenizer port, sampling loop, WebGPU worker,
                  download/OPFS/manifest client
   store/         reducer + context, swappable persistence (IndexedDB / memory)
@@ -130,10 +134,9 @@ Design notes worth knowing before hacking on it:
 
 ## Documentation
 
-- [docs/motif-forge-project-brief.md](docs/motif-forge-project-brief.md) — the original spec and source of truth for scope, data model, and validation rules
-- [docs/motif-forge-offline-generation-spec.md](docs/motif-forge-offline-generation-spec.md) — the INSTANT/NEURAL offline-generation plan
-- [docs/PLAN.md](docs/PLAN.md) — the MVP implementation plan
 - [docs/model-notes.md](docs/model-notes.md) — verified facts about the neural model and tokenizer
+- [docs/TODO.md](docs/TODO.md) — index of planned-but-unimplemented features, each with a full plan in docs/
+- [docs/archive/](docs/archive/) — implemented specs and plans (the project brief, the UI design handoff, the MVP plan, the INSTANT/NEURAL offline-generation spec)
 - [CLAUDE.md](CLAUDE.md) — dense contributor notes on architecture and conventions
 
 ## Out of scope

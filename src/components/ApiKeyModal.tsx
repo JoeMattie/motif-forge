@@ -30,6 +30,7 @@ export function ApiKeyModal({ opened, onClose }: { opened: boolean; onClose: () 
     <Modal
       opened={opened}
       onClose={onClose}
+      size={560}
       title={
         <>
           <span className="brand">MOTIF–FORGE</span>

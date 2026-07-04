@@ -1,19 +1,32 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
+  ActionIcon,
+  Autocomplete,
   Button,
   Chip,
   NumberInput,
   SegmentedControl,
   Slider,
   Textarea,
-  TextInput,
   Tooltip,
 } from '@mantine/core'
-import { CaretDownIcon, CaretRightIcon } from '@phosphor-icons/react'
-import type { GenerationBrief, Mode } from '../types'
+import { notifications } from '@mantine/notifications'
+import { CaretDownIcon, CaretRightIcon, DiceFiveIcon } from '@phosphor-icons/react'
+import type { GenerationBrief, Mode, Motif, SynthPreset } from '../types'
 import { MODES } from '../core/theory'
 import { generateBatch } from '../api/generate'
-import { generateSymbolicBatch, keepersOf, randomSeed } from '../generation/symbolic'
+import {
+  fitnessScore,
+  generateSymbolicBatch,
+  keepersOf,
+  melodicLine,
+  randomSeed,
+} from '../generation/symbolic'
+import {
+  generateGeneticBatch,
+  type GeneticPresetChoice,
+  RIFF_PRESET_NAMES,
+} from '../generation/genetic'
 import {
   enableNeural,
   getNeuralSnapshot,
@@ -28,8 +41,8 @@ import { validateBatch, type ValidationResult } from '../core/validate'
 import { useAppDispatch, useAppState } from '../store/AppContext'
 import type { PendingBatch } from '../store/appState'
 import { newId } from '../core/ids'
-import { getAnthropicKey } from '../uiPrefs'
-import { Knob } from './hw/Knob'
+import { getAnthropicKey, useClaudeReady } from '../uiPrefs'
+import { CircleOfFifths, KeySignature } from './hw/CircleOfFifths'
 
 const KEYS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
 const BARS = [2, 4, 8]
@@ -45,13 +58,91 @@ const MODE_SHORT: Record<Mode, string> = {
   locrian: 'LOC',
 }
 
-const atPosition = <T,>(list: readonly T[], position: number): T =>
-  list[Math.max(0, Math.min(list.length - 1, Math.round(position * (list.length - 1))))]
+/** Brief parameters that can be re-rolled per generation via the dice toggles.
+ * 'parts' covers the lead/rhythm/extra toggles together with one dice. */
+type DiceParam = 'key' | 'mode' | 'bars' | 'tempo' | 'groove' | 'parts' | 'chromatic'
 
-const INSTANT_CHIP_HINT =
-  'Not used by the INSTANT engine — it generates a single melodic line (no parts or drums). Play it through any sound with the transport-strip picker'
+const NO_DICE: Record<DiceParam, boolean> = {
+  key: false,
+  mode: false,
+  bars: false,
+  tempo: false,
+  groove: false,
+  parts: false,
+  chromatic: false,
+}
 
-type Engine = 'instant' | 'neural' | 'claude'
+// Dice rolls happen at the call site, like randomSeed() — the seeded-PRNG rule
+// only binds inside generators, and every rolled value lands in the brief, so
+// motifs stay reproducible from their stored metadata.
+const rollFrom = <T,>(list: readonly T[]): T => list[Math.floor(Math.random() * list.length)]
+const coin = () => Math.random() < 0.5
+
+/** A plausible synth patch rolled per candidate: never the plain default wave,
+ * envelope biased snappy with the occasional slow pad. */
+const rollSynthPreset = (): SynthPreset => ({
+  oscillator: rollFrom(['triangle', 'sawtooth', 'square'] as const),
+  envelope: {
+    attack: 0.002 + Math.random() ** 2 * 0.25,
+    decay: 0.05 + Math.random() * 0.35,
+    sustain: 0.15 + Math.random() * 0.65,
+    release: 0.08 + Math.random() * 0.8,
+  },
+})
+
+/** Attach a rolled patch to every synth part; partless bones gain a synth lead
+ * so the patch has somewhere to live (notes without a part index play part 0). */
+const withRandomSound = (m: Motif): Motif =>
+  m.parts.length === 0
+    ? { ...m, parts: [{ name: 'lead', instrument: 'synth', preset: rollSynthPreset() }] }
+    : {
+        ...m,
+        parts: m.parts.map((p) =>
+          p.instrument === 'synth' ? { ...p, preset: rollSynthPreset() } : p,
+        ),
+      }
+
+/** Small dice tickbox: ticked = re-roll this parameter on every generation. */
+function DiceToggle({
+  what,
+  on,
+  onToggle,
+  disabled,
+}: {
+  what: string
+  on: boolean
+  onToggle: () => void
+  disabled?: boolean
+}) {
+  return (
+    <Tooltip
+      label={
+        on
+          ? `Rolling ${what} per generation — click to use the set value again`
+          : `Roll ${what} randomly on each generation`
+      }
+    >
+      {/* wrapper span so the tooltip still hovers when the button is disabled */}
+      <span className="gen-dice-wrap">
+        <ActionIcon
+          className="gen-dice"
+          data-on={on || undefined}
+          disabled={disabled}
+          onClick={onToggle}
+          aria-label={`randomize ${what}`}
+          aria-pressed={on}
+        >
+          <DiceFiveIcon size={13} />
+        </ActionIcon>
+      </span>
+    </Tooltip>
+  )
+}
+
+const PARTLESS_CHIP_HINT =
+  'Not used by this engine — INSTANT and GENETIC generate a single melodic line (INSTANT can still add drums via RHYTHM). Play melodic bones through any sound with the transport-strip picker'
+
+type Engine = 'instant' | 'genetic' | 'neural' | 'claude'
 
 /** One "run" of generation: batches queued since the queue was last empty. */
 interface GenRun {
@@ -114,42 +205,48 @@ function NeuralStrip() {
   const neural = useSyncExternalStore(subscribeNeural, getNeuralSnapshot)
   const mb = Math.round(MODEL_TOTAL_BYTES / (1024 * 1024))
   return (
-    <div
-      className="gen-neural-strip"
-      style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center' }}
-    >
-      {neural.state === 'unsupported' && (
-        <span className="micro">WEBGPU UNAVAILABLE — INSTANT + CLAUDE ONLY</span>
-      )}
-      {neural.state === 'idle' && (
-        <Tooltip label={`One-time download of the on-device model (~${mb} MB), cached in browser storage. Everything runs locally after that`}>
-          <Button className="green" onClick={() => void enableNeural()}>
-            <span>Enable · {mb} MB</span>
-          </Button>
-        </Tooltip>
-      )}
-      {neural.state === 'downloading' && (
-        <span className="micro">DOWNLOADING… {Math.round(neural.progress * 100)}%</span>
-      )}
-      {neural.state === 'loading' && <span className="micro">LOADING MODEL…</span>}
-      {neural.state === 'ready' && (
-        <>
-          <span className="micro">READY — LOCAL, OFFLINE</span>
-          <Tooltip label="Delete the downloaded model from browser storage">
-            <Button className="danger-text" onClick={() => void removeNeuralModel()}>
-              Remove
-            </Button>
-          </Tooltip>
-        </>
-      )}
-      {neural.state === 'error' && (
-        <>
-          <span className="micro" style={{ color: 'var(--danger, #c33)' }}>
-            {neural.error?.toUpperCase().slice(0, 80)}
-          </span>
-          <Button onClick={() => void enableNeural()}>Retry</Button>
-        </>
-      )}
+    <div className="gen-ctl">
+      <span className="knob-label">model</span>
+      <div
+        className="gen-neural-strip"
+        style={{ display: 'flex', gap: 8, alignItems: 'flex-start', justifyContent: 'flex-start' }}
+      >
+        {neural.state === 'unsupported' && (
+          <span className="micro">WEBGPU UNAVAILABLE — INSTANT + CLAUDE ONLY</span>
+        )}
+        {neural.state === 'idle' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+            <span className="micro">{mb} MB</span>
+            <Tooltip label={`One-time download of the on-device model (~${mb} MB), cached in browser storage. Everything runs locally after that`}>
+              <Button className="green" onClick={() => void enableNeural()}>
+                Enable
+              </Button>
+            </Tooltip>
+          </div>
+        )}
+        {neural.state === 'downloading' && (
+          <span className="micro">DOWNLOADING… {Math.round(neural.progress * 100)}%</span>
+        )}
+        {neural.state === 'loading' && <span className="micro">LOADING MODEL…</span>}
+        {neural.state === 'ready' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+            <span className="micro">READY</span>
+            <Tooltip label="Delete the downloaded model from browser storage">
+              <Button className="danger-text" onClick={() => void removeNeuralModel()}>
+                Remove model
+              </Button>
+            </Tooltip>
+          </div>
+        )}
+        {neural.state === 'error' && (
+          <>
+            <span className="micro" style={{ color: 'var(--danger, #c33)' }}>
+              {neural.error?.toUpperCase().slice(0, 80)}
+            </span>
+            <Button onClick={() => void enableNeural()}>Retry</Button>
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -157,7 +254,7 @@ function NeuralStrip() {
 export function GenerationPanel() {
   const { concepts, motifs, pending, generation } = useAppState()
   const dispatch = useAppDispatch()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(true)
   // Tracked here (not inside GenProgress) so the run survives collapsing the panel.
   const run = useGenerationRun(pending)
   // The panel docks sticky to the top of the scrolling view; `stuck` adds a
@@ -177,8 +274,22 @@ export function GenerationPanel() {
   const dockClass = `gen-dock${stuck ? ' stuck' : ''}`
   // Tier-1 offline symbolic engine is the default (spec Phase 6).
   const [engine, setEngine] = useState<Engine>('instant')
-  // Symbolic motifs are partless melodic bones — the part/texture chips don't apply.
-  const instant = engine === 'instant'
+  const claudeReady = useClaudeReady()
+  // If the key disappears while CLAUDE is selected, fall back to the default.
+  useEffect(() => {
+    if (!claudeReady && engine === 'claude') setEngine('instant')
+  }, [claudeReady, engine])
+  const [riffPreset, setRiffPreset] = useState<GeneticPresetChoice>('techno')
+  const [dice, setDice] = useState(NO_DICE)
+  const toggleDice = (p: DiceParam) => setDice((d) => ({ ...d, [p]: !d[p] }))
+  // Symbolic and genetic motifs are melodic bones — the lead/extra texture
+  // chips don't apply. RHYTHM does apply to INSTANT (it lays a seeded offline
+  // drum part under the line); only GENETIC ignores it.
+  const noTextures = engine === 'instant' || engine === 'genetic'
+  const noRhythm = engine === 'genetic'
+  // Only the LLM composer reads the free-text brief (the concept field is a
+  // category tag and applies to every engine).
+  const briefApplies = engine === 'claude'
   const [key, setKey] = useState('D')
   const [mode, setMode] = useState<Mode>('dorian')
   const [tempo, setTempo] = useState(100)
@@ -189,6 +300,27 @@ export function GenerationPanel() {
   const [lead, setLead] = useState(true) // on = 'lead' texture, off = free poly
   const [includeRhythm, setIncludeRhythm] = useState(true)
   const [extraInstruments, setExtraInstruments] = useState(false)
+  // Latched = every offline candidate gets a rolled synth patch instead of the
+  // deliberately plain default voice (CLAUDE sound-designs its own parts).
+  const [randomSound, setRandomSound] = useState(false)
+
+  /** Restore every panel field to its initial value (the useState defaults above). */
+  const resetBrief = () => {
+    setEngine('instant')
+    setRiffPreset('techno')
+    setDice(NO_DICE)
+    setKey('D')
+    setMode('dorian')
+    setTempo(100)
+    setBars(4)
+    setConcept('')
+    setText('')
+    setAllowChromatic(false)
+    setLead(true)
+    setIncludeRhythm(true)
+    setExtraInstruments(false)
+    setRandomSound(false)
+  }
 
   /** Reuse or create the named concept; returns its id (or null when unnamed). */
   const resolveConceptId = (): string | null => {
@@ -199,6 +331,17 @@ export function GenerationPanel() {
     const id = newId()
     dispatch({ type: 'CONCEPT_CREATED', concept: { id, name, createdAt: Date.now() } })
     return id
+  }
+
+  /** Land a run's outcome in both places it surfaces: the reducer (the LCD
+   *  progress strip reads `generation.message`) and a corner notification. */
+  const reportOutcome = (message: string, failed = false) => {
+    dispatch({ type: failed ? 'GENERATION_FAILED' : 'GENERATION_FINISHED', message })
+    notifications.show({
+      message,
+      color: failed ? 'red' : 'forge',
+      autoClose: failed ? 8000 : 4000,
+    })
   }
 
   /** Queue one batch: placeholder appears immediately, results land when ready.
@@ -217,13 +360,12 @@ export function GenerationPanel() {
       .then((result) => {
         const motifs = conceptId ? result.valid.map((m) => ({ ...m, conceptId })) : result.valid
         dispatch({ type: 'MOTIFS_ADDED', motifs })
-        dispatch({
-          type: 'GENERATION_FINISHED',
-          message: `${motifs.length} added${result.droppedCount ? `, ${result.droppedCount} dropped` : ''}${result.scaleWarningCount ? `, ${result.scaleWarningCount} chromatic` : ''}`,
-        })
+        reportOutcome(
+          `${motifs.length} added${result.droppedCount ? `, ${result.droppedCount} dropped` : ''}${result.scaleWarningCount ? `, ${result.scaleWarningCount} chromatic` : ''}`,
+        )
       })
       .catch((e) => {
-        dispatch({ type: 'GENERATION_FAILED', message: `Generation failed: ${String(e).slice(0, 120)}` })
+        reportOutcome(`Generation failed: ${String(e).slice(0, 120)}`, true)
       })
       .finally(() => {
         clearStep(batchId)
@@ -234,10 +376,7 @@ export function GenerationPanel() {
   /** Neural batch: candidates stream in one by one as the worker decodes them. */
   const queueNeuralBatch = (count: number, label: string, brief: GenerationBrief) => {
     if (getNeuralSnapshot().state !== 'ready') {
-      dispatch({
-        type: 'GENERATION_FAILED',
-        message: 'Neural model not ready — enable it in the generation panel',
-      })
+      reportOutcome('Neural model not ready — enable it in the generation panel', true)
       return
     }
     const batchId = newId()
@@ -246,6 +385,9 @@ export function GenerationPanel() {
     let added = 0
     let dropped = 0
     let chromatic = 0
+    // Accumulated for the end-of-batch fitness reorder (streamed candidates
+    // land in decode order; onDone re-ranks them best-first).
+    const batchMotifs: Motif[] = []
     reportStep(batchId, 'queued for the WebGPU sampler (batches run one at a time)')
     requestNeuralBatch({
       brief,
@@ -275,45 +417,106 @@ export function GenerationPanel() {
         added += result.valid.length
         dropped += result.droppedCount
         chromatic += result.scaleWarningCount
-        if (result.valid.length > 0) dispatch({ type: 'MOTIFS_ADDED', motifs: result.valid })
+        // Score each candidate's melodic line so the finished batch can be
+        // ranked best-first in the grid (order, don't filter — candidates are
+        // too expensive to over-generate on WebGPU).
+        const scored = result.valid.map((m) => {
+          const fitness = fitnessScore(melodicLine(m), m)
+          const fit = m.source.kind === 'neural' ? { ...m, source: { ...m.source, fitness } } : m
+          return randomSound ? withRandomSound(fit) : fit
+        })
+        batchMotifs.push(...scored)
+        if (scored.length > 0) dispatch({ type: 'MOTIFS_ADDED', motifs: scored })
       },
       onDone: () => {
-        dispatch({
-          type: 'GENERATION_FINISHED',
-          message: `${added} added${dropped ? `, ${dropped} dropped` : ''}${chromatic ? `, ${chromatic} chromatic` : ''}`,
-        })
+        if (batchMotifs.length > 1) {
+          // Re-stamp createdAt in fitness order: MOTIFS_ADDED upserts by id and
+          // the grid sorts families by root createdAt, so the batch reshuffles
+          // best-first once, staying in its own time neighborhood.
+          const fitnessOf = (m: Motif) =>
+            m.source.kind === 'neural' ? (m.source.fitness ?? 0) : 0
+          const minCreated = Math.min(...batchMotifs.map((m) => m.createdAt))
+          const ranked = [...batchMotifs]
+            .sort((a, b) => fitnessOf(b) - fitnessOf(a))
+            .map((m, rank) => ({ ...m, createdAt: minCreated + rank }))
+          dispatch({ type: 'MOTIFS_ADDED', motifs: ranked })
+        }
+        reportOutcome(
+          `${added} added${dropped ? `, ${dropped} dropped` : ''}${chromatic ? `, ${chromatic} chromatic` : ''}`,
+        )
         clearStep(batchId)
         dispatch({ type: 'BATCH_FINISHED', id: batchId })
       },
       onError: (message) => {
-        dispatch({ type: 'GENERATION_FAILED', message: `Neural generation failed: ${message}` })
+        reportOutcome(`Neural generation failed: ${message}`, true)
         clearStep(batchId)
         dispatch({ type: 'BATCH_FINISHED', id: batchId })
       },
     })
   }
 
-  const buildBrief = (): GenerationBrief => ({
-    key,
-    mode,
-    tempo: Math.max(40, Math.min(220, Math.round(tempo))),
-    bars,
-    timeSig: '4/4',
-    concept,
-    text,
-    allowChromatic,
-    texture: lead ? 'lead' : 'poly',
-    includeRhythm,
-    extraInstruments,
-  })
+  /** The brief for one generation press: diced parameters re-roll on every
+   * press, and the rolled values are written back into the (disabled)
+   * controls so the panel shows exactly what was just used. */
+  const buildBrief = (): GenerationBrief => {
+    const rolledKey = dice.key ? rollFrom(KEYS) : key
+    const rolledMode = dice.mode ? rollFrom(MODES) : mode
+    const rolledTempo = dice.tempo
+      ? 70 + Math.floor(Math.random() * 101)
+      : Math.max(40, Math.min(220, Math.round(tempo)))
+    const rolledBars = dice.bars ? rollFrom(BARS) : bars
+    const rolledLead = dice.parts ? coin() : lead
+    const rolledRhythm = dice.parts ? coin() : includeRhythm
+    const rolledExtra = dice.parts ? coin() : extraInstruments
+    const rolledChromatic = dice.chromatic ? coin() : allowChromatic
+    if (dice.key) setKey(rolledKey)
+    if (dice.mode) setMode(rolledMode)
+    if (dice.tempo) setTempo(rolledTempo)
+    if (dice.bars) setBars(rolledBars)
+    if (dice.parts) {
+      setLead(rolledLead)
+      setIncludeRhythm(rolledRhythm)
+      setExtraInstruments(rolledExtra)
+    }
+    if (dice.chromatic) setAllowChromatic(rolledChromatic)
+    return {
+      key: rolledKey,
+      mode: rolledMode,
+      tempo: rolledTempo,
+      bars: rolledBars,
+      timeSig: '4/4',
+      concept,
+      text,
+      allowChromatic: rolledChromatic,
+      texture: rolledLead ? 'lead' : 'poly',
+      includeRhythm: rolledRhythm,
+      extraInstruments: rolledExtra,
+    }
+  }
 
   const generate = (count: number) => {
     const brief = buildBrief()
-    const label = concept.trim() || `${key} ${mode}`
+    const label = concept.trim() || `${brief.key} ${brief.mode}`
+    // SOUND latch: patch the finished batch (a UI concern — the engines stay
+    // deterministic from their seeds; the rolled patch persists on the motif).
+    const patch = (r: ValidationResult): ValidationResult =>
+      randomSound ? { ...r, valid: r.valid.map(withRandomSound) } : r
     if (engine === 'instant') {
       // Offline symbolic tier: one deterministic batch, evolved from keepers.
       const keepers = keepersOf(motifs.values())
-      queueBatch(count, label, async () => generateSymbolicBatch(brief, count, keepers, randomSeed()))
+      queueBatch(count, label, async () =>
+        patch(generateSymbolicBatch(brief, count, keepers, randomSeed())),
+      )
+      return
+    }
+    if (engine === 'genetic') {
+      // Offline genetic-riff tier (ga-riffs port): one GA run per motif.
+      // A diced groove rolls per press and lands in the control like the rest.
+      const preset = dice.groove ? rollFrom(RIFF_PRESET_NAMES) : riffPreset
+      if (dice.groove) setRiffPreset(preset)
+      queueBatch(count, label, async () =>
+        patch(generateGeneticBatch(brief, count, preset, randomSeed())),
+      )
       return
     }
     if (engine === 'neural') {
@@ -321,10 +524,7 @@ export function GenerationPanel() {
       return
     }
     if (!getAnthropicKey() && !import.meta.env.DEV) {
-      dispatch({
-        type: 'GENERATION_FAILED',
-        message: 'CLAUDE needs your Anthropic API key — set it under KEY in the header',
-      })
+      reportOutcome('CLAUDE needs your Anthropic API key — set it under KEY in the header', true)
       return
     }
     // Polyphonic motif JSON is bulky — cap each call at 5 motifs so the
@@ -337,8 +537,21 @@ export function GenerationPanel() {
   }
 
   // Formatted explicitly (no CSS uppercasing) so flats keep their lowercase b: "Eb", not "EB".
-  const enginePrefix = engine === 'instant' ? '' : `${engine.toUpperCase()} · `
-  const summary = `${enginePrefix}${key} ${mode.toUpperCase()} · ${tempo} BPM · ${bars} BARS · ${lead ? 'LEAD' : 'POLY'}${extraInstruments ? '+XTRA' : ''}${includeRhythm ? '+RHYTHM' : ''}${allowChromatic ? '+CHR' : ''}`
+  const enginePrefix =
+    engine === 'instant'
+      ? ''
+      : engine === 'genetic'
+        ? `GENETIC/${dice.groove ? '?' : riffPreset.toUpperCase()} · `
+        : `${engine.toUpperCase()} · `
+  // Diced parameters read as '?' — they re-roll on every generation press.
+  // Engines that ignore the texture chips summarize as a bare LINE (+RHYTHM
+  // when INSTANT will lay its drum part).
+  const partsSummary = dice.parts
+    ? 'PARTS?'
+    : noTextures
+      ? `LINE${!noRhythm && includeRhythm ? '+RHYTHM' : ''}`
+      : `${lead ? 'LEAD' : 'POLY'}${extraInstruments ? '+XTRA' : ''}${includeRhythm ? '+RHYTHM' : ''}`
+  const summary = `${enginePrefix}${dice.key ? '?' : key} ${dice.mode ? '?' : mode.toUpperCase()} · ${dice.tempo ? '?' : tempo} BPM · ${dice.bars ? '?' : bars} BARS · ${partsSummary}${dice.chromatic ? '+CHR?' : allowChromatic ? '+CHR' : ''}`
 
   const actions = () => (
     <>
@@ -359,7 +572,7 @@ export function GenerationPanel() {
     return (
       <section ref={dockRef} className={`module gen-strip ${dockClass}`}>
         <button type="button" className="gen-title" onClick={() => setOpen(true)}>
-          Generate <CaretRightIcon size={10} weight="bold" />
+          Generate <CaretRightIcon size={10} />
         </button>
         <span className="gen-summary">
           {summary}
@@ -370,7 +583,7 @@ export function GenerationPanel() {
             </>
           )}
         </span>
-        {text.trim() && <span className="gen-brief-preview">“{text.trim()}”</span>}
+        {briefApplies && text.trim() && <span className="gen-brief-preview">“{text.trim()}”</span>}
         <span className="spacer" />
         {actions()}
       </section>
@@ -381,42 +594,58 @@ export function GenerationPanel() {
     <section ref={dockRef} className={`module ${dockClass}`}>
       <div className="gen-strip" style={{ paddingBottom: 0 }}>
         <button type="button" className="gen-title" onClick={() => setOpen(false)}>
-          Generate <CaretDownIcon size={10} weight="bold" />
+          Generate <CaretDownIcon size={10} />
         </button>
+        <Tooltip label="Reset every field on this panel to its default">
+          <Button onClick={resetBrief}>Default</Button>
+        </Tooltip>
+        <GenProgress run={run} pending={pending} message={generation.message} />
       </div>
       <div className="gen-module">
         <div className="gen-knobs">
-          <div className="gen-knob-stack">
-            <div className="gen-knob-row">
-              <Tooltip label="Tonal center all candidates are written in">
+          <div className="gen-ctl">
+            <span className="knob-label gen-label-dice">
+              mode
+              <DiceToggle what="the mode" on={dice.mode} onToggle={() => toggleDice('mode')} />
+            </span>
+            <Tooltip label="Scale flavor: ionian = major, aeolian = natural minor; dorian/mixolydian sit between, phrygian/locrian are darker, lydian brighter">
+              <SegmentedControl
+                orientation="vertical"
+                disabled={dice.mode}
+                value={mode}
+                onChange={(v) => setMode(v as Mode)}
+                data={MODES.map((m) => ({ value: m, label: MODE_SHORT[m] }))}
+              />
+            </Tooltip>
+          </div>
+          <div className="gen-ctl">
+            <span className="knob-label gen-label-dice">
+              key <b>{key}</b>
+              <DiceToggle what="the key" on={dice.key} onToggle={() => toggleDice('key')} />
+            </span>
+            <div className="gen-key-row">
+              <Tooltip label="Tonal center all candidates are written in — majors around the dial, relative minors inside">
                 <div>
-                  <Knob
-                    label="key"
-                    value={key}
-                    position={KEYS.indexOf(key) / (KEYS.length - 1)}
-                    detents={KEYS.length}
-                    onPosition={(p) => setKey(atPosition(KEYS, p))}
-                  />
+                  <CircleOfFifths disabled={dice.key} value={key} onChange={setKey} />
                 </div>
               </Tooltip>
-              <Tooltip label="Scale flavor: ionian = major, aeolian = natural minor; dorian/mixolydian sit between, phrygian/locrian are darker, lydian brighter">
+              <Tooltip label="Key signature of the selected key + mode — the accidentals candidates will actually use">
                 <div>
-                  <Knob
-                    label="mode"
-                    value={MODE_SHORT[mode]}
-                    position={MODES.indexOf(mode) / (MODES.length - 1)}
-                    detents={MODES.length}
-                    onPosition={(p) => setMode(atPosition(MODES, p))}
-                  />
+                  <KeySignature musicKey={key} mode={mode} />
                 </div>
               </Tooltip>
             </div>
-            <Tooltip label="BPM stored on each candidate; the transport strip can override during audition">
-              <div className="gen-ctl">
-                <span className="knob-label">tempo</span>
-                <div className="gen-tempo-row">
+          </div>
+          <div className="gen-stack">
+            <div className="gen-ctl">
+              <span className="knob-label gen-label-dice">
+                tempo
+                <DiceToggle what="the tempo" on={dice.tempo} onToggle={() => toggleDice('tempo')} />
+              </span>
+              <Tooltip label="BPM stored on each candidate; the transport strip can override during audition">
+                <div className="gen-tempo-col">
                   <Slider
-                    w={130}
+                    w={160}
                     size="sm"
                     min={40}
                     max={220}
@@ -424,6 +653,7 @@ export function GenerationPanel() {
                     marks={TEMPO_MARKS}
                     // dragging snaps to the common tempos; the number input is free-form
                     restrictToMarks
+                    disabled={dice.tempo}
                     value={Math.max(40, Math.min(220, tempo))}
                     onChange={setTempo}
                   />
@@ -433,6 +663,7 @@ export function GenerationPanel() {
                     min={40}
                     max={220}
                     clampBehavior="blur"
+                    disabled={dice.tempo}
                     value={tempo}
                     onChange={(v) => {
                       const n = Number(v)
@@ -440,34 +671,46 @@ export function GenerationPanel() {
                     }}
                   />
                 </div>
-              </div>
-            </Tooltip>
-          </div>
-          <Tooltip label="Phrase length in bars of 4/4 — candidates must fill it exactly">
-            <div className="gen-ctl">
-              <span className="knob-label">bars</span>
-              <SegmentedControl
-                orientation="vertical"
-                value={String(bars)}
-                onChange={(v) => setBars(Number(v))}
-                data={BARS.map(String)}
-              />
+              </Tooltip>
             </div>
-          </Tooltip>
+            <div className="gen-ctl">
+              <span className="knob-label gen-label-dice">
+                bars
+                <DiceToggle what="the bar count" on={dice.bars} onToggle={() => toggleDice('bars')} />
+              </span>
+              <Tooltip label="Phrase length in bars of 4/4 — candidates must fill it exactly">
+                <SegmentedControl
+                  disabled={dice.bars}
+                  value={String(bars)}
+                  onChange={(v) => setBars(Number(v))}
+                  data={BARS.map(String)}
+                />
+              </Tooltip>
+            </div>
+          </div>
         </div>
         <div className="gen-divider" />
         <div className="gen-engine">
           <div className="gen-ctl">
             <span className="knob-label">engine</span>
             <SegmentedControl
+              orientation="vertical"
               value={engine}
               onChange={(v) => setEngine(v as Engine)}
               data={[
                 {
                   value: 'instant',
                   label: (
-                    <Tooltip label="Offline rules + evolution of your kept motifs (★3+) — free, immediate">
+                    <Tooltip label="Offline evolution: your kept motifs (★3+) and fresh walks bred against a musical fitness, best survivors only — free, immediate. RHYTHM adds a seeded drum part">
                       <span>INSTANT</span>
+                    </Tooltip>
+                  ),
+                },
+                {
+                  value: 'genetic',
+                  label: (
+                    <Tooltip label="Offline genetic algorithm — evolves rhythm genomes into pitched riffs (techno / organic / tribal)">
+                      <span>GENETIC</span>
                     </Tooltip>
                   ),
                 },
@@ -481,8 +724,15 @@ export function GenerationPanel() {
                 },
                 {
                   value: 'claude',
+                  disabled: !claudeReady,
                   label: (
-                    <Tooltip label="LLM composer — honors the brief text, textures, and drums (needs your API key: KEY in the header)">
+                    <Tooltip
+                      label={
+                        claudeReady
+                          ? 'LLM composer — honors the brief text, textures, and drums'
+                          : 'Needs your Anthropic API key — set it under KEY in the header'
+                      }
+                    >
                       <span>CLAUDE</span>
                     </Tooltip>
                   ),
@@ -491,84 +741,162 @@ export function GenerationPanel() {
             />
           </div>
           {engine === 'neural' && <NeuralStrip />}
-        </div>
-        <div className="gen-divider" />
-        <div className="gen-mid">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-            <span className="micro" style={{ letterSpacing: '.14em' }}>
-              Concept · brief
-            </span>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <Tooltip
-                label={
-                  instant
-                    ? INSTANT_CHIP_HINT
-                    : 'Lead: one clear melodic line with occasional chords (≤4 voices). Off: freely polyphonic (≤6 voices, up to 4 parts)'
-                }
-              >
-                <span className="gen-chip">
-                  <Chip checked={lead} onChange={setLead} disabled={instant}>
-                    lead
-                  </Chip>
-                </span>
-              </Tooltip>
-              <Tooltip
-                label={
-                  instant
-                    ? INSTANT_CHIP_HINT
-                    : 'Every candidate includes a drum-kit part (GM percussion) grooving under the melodic material'
-                }
-              >
-                <span className="gen-chip">
-                  <Chip checked={includeRhythm} onChange={setIncludeRhythm} disabled={instant}>
-                    rhythm
-                  </Chip>
-                </span>
-              </Tooltip>
-              <Tooltip
-                label={
-                  instant
-                    ? INSTANT_CHIP_HINT
-                    : 'Fuller arrangements: 4–6 parts with distinct roles (lead, counter-line, pad, bass, drums) instead of the default 1–4'
-                }
-              >
-                <span className="gen-chip">
-                  <Chip checked={extraInstruments} onChange={setExtraInstruments} disabled={instant}>
-                    extra
-                  </Chip>
-                </span>
-              </Tooltip>
-              <Tooltip label="Strict: every note stays in the chosen key/mode. Chromatic: notes outside it are welcome (passing tones, color notes) — out-of-scale notes only warn, never discard">
+          {engine === 'genetic' && (
+            <div className="gen-ctl">
+              <span className="knob-label gen-label-dice">
+                groove
+                <DiceToggle
+                  what="the groove preset"
+                  on={dice.groove}
+                  onToggle={() => toggleDice('groove')}
+                />
+              </span>
+              <Tooltip label="Fitness preset: accent grid, density target, and syncopation appetite. SURPRISE synthesizes a new preset per riff — Euclidean accent skeleton, rolled weights, and a loopiness reward">
                 <SegmentedControl
-                  value={allowChromatic ? 'chromatic' : 'strict'}
-                  onChange={(v) => setAllowChromatic(v === 'chromatic')}
+                  orientation="vertical"
+                  disabled={dice.groove}
+                  value={riffPreset}
+                  onChange={(v) => setRiffPreset(v as GeneticPresetChoice)}
                   data={[
-                    { value: 'strict', label: 'STRICT' },
-                    { value: 'chromatic', label: 'CHROMATIC' },
+                    { value: 'techno', label: 'TECHNO' },
+                    { value: 'organic', label: 'ORGANIC' },
+                    { value: 'tribal', label: 'TRIBAL' },
+                    { value: 'surprise', label: <span className="wb-seg-accent">SURPRISE</span> },
                   ]}
                 />
               </Tooltip>
             </div>
-          </div>
-          <Tooltip label="Song concept / leitmotif tag — candidates are grouped under it in the Concepts view">
-            <TextInput
+          )}
+        </div>
+        <div className="gen-divider" />
+        <div className="gen-mid">
+          <span className="micro" style={{ letterSpacing: '.14em' }}>
+            Concept · brief
+          </span>
+          <Tooltip label="Song concept / leitmotif tag — candidates are grouped under it in the Concepts view. Pick an existing concept from the dropdown or type a new name">
+            <Autocomplete
               placeholder="concept — e.g. event horizon"
               value={concept}
-              onChange={(e) => setConcept(e.currentTarget.value)}
+              onChange={setConcept}
+              data={[...concepts.values()].map((c) => c.name)}
             />
           </Tooltip>
-          <Tooltip label="Free-text direction: contour, rhythmic character, emotional intent, references — anything the composer should honor">
+          <Tooltip
+            label={
+              briefApplies
+                ? 'Free-text direction: contour, rhythmic character, emotional intent, references — anything the composer should honor'
+                : 'Only the CLAUDE composer reads free-text direction — the offline engines steer by key/mode/bars (and GROOVE for GENETIC)'
+            }
+          >
             <Textarea
               rows={2}
               placeholder="Contour, rhythmic character, emotional intent… e.g. slow rise then collapse, sparse and hollow, dread that resolves too late"
               value={text}
               onChange={(e) => setText(e.currentTarget.value)}
+              disabled={!briefApplies}
             />
+          </Tooltip>
+        </div>
+        <div className="gen-divider" />
+        <div className="gen-parts">
+          <span className="micro gen-label-dice" style={{ letterSpacing: '.14em' }}>
+            Parts
+            <DiceToggle
+              what="the lead/rhythm/extra toggles (all three re-roll together)"
+              on={dice.parts}
+              onToggle={() => toggleDice('parts')}
+              disabled={noRhythm}
+            />
+          </span>
+          <div className="gen-part-chips">
+            <Tooltip
+              label={
+                noTextures
+                  ? PARTLESS_CHIP_HINT
+                  : 'Lead: one clear melodic line with occasional chords (≤4 voices). Off: freely polyphonic (≤6 voices, up to 4 parts)'
+              }
+            >
+              <span className="gen-chip">
+                <Chip checked={lead} onChange={setLead} disabled={noTextures || dice.parts}>
+                  lead
+                </Chip>
+              </span>
+            </Tooltip>
+            <Tooltip
+              label={
+                noRhythm
+                  ? PARTLESS_CHIP_HINT
+                  : 'Every candidate includes a drum-kit part (GM percussion) grooving under the melodic material — composed by CLAUDE/NEURAL, laid as a seeded probabilistic groove by INSTANT'
+              }
+            >
+              <span className="gen-chip">
+                <Chip
+                  checked={includeRhythm}
+                  onChange={setIncludeRhythm}
+                  disabled={noRhythm || dice.parts}
+                >
+                  rhythm
+                </Chip>
+              </span>
+            </Tooltip>
+            <Tooltip
+              label={
+                noTextures
+                  ? PARTLESS_CHIP_HINT
+                  : 'Fuller arrangements: 4–6 parts with distinct roles (lead, counter-line, pad, bass, drums) instead of the default 1–4'
+              }
+            >
+              <span className="gen-chip">
+                <Chip
+                  checked={extraInstruments}
+                  onChange={setExtraInstruments}
+                  disabled={noTextures || dice.parts}
+                >
+                  extra
+                </Chip>
+              </span>
+            </Tooltip>
+          </div>
+          <span className="micro gen-label-dice" style={{ letterSpacing: '.14em' }}>
+            Scale
+            <DiceToggle
+              what="strict vs chromatic"
+              on={dice.chromatic}
+              onToggle={() => toggleDice('chromatic')}
+            />
+          </span>
+          <Tooltip label="Strict: every note stays in the chosen key/mode. Chromatic: notes outside it are welcome (passing tones, color notes) — out-of-scale notes only warn, never discard">
+            <SegmentedControl
+              disabled={dice.chromatic}
+              value={allowChromatic ? 'chromatic' : 'strict'}
+              onChange={(v) => setAllowChromatic(v === 'chromatic')}
+              data={[
+                { value: 'strict', label: 'STRICT' },
+                { value: 'chromatic', label: 'CHROMATIC' },
+              ]}
+            />
+          </Tooltip>
+          <span className="micro" style={{ letterSpacing: '.14em' }}>
+            Sound
+          </span>
+          <Tooltip
+            label={
+              engine === 'claude'
+                ? 'CLAUDE sound-designs its own synth parts — this latch only shapes the offline engines'
+                : 'Roll each candidate a synth patch (waveform + envelope) instead of the deliberately plain default voice — so a batch doesn’t all sound alike'
+            }
+          >
+            <Button
+              data-latched={randomSound}
+              disabled={engine === 'claude'}
+              onClick={() => setRandomSound((v) => !v)}
+            >
+              Random patch
+            </Button>
           </Tooltip>
         </div>
         <div className="gen-actions">{actions()}</div>
       </div>
-      <GenProgress run={run} pending={pending} message={generation.message} />
     </section>
   )
 }

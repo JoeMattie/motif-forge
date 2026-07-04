@@ -36,7 +36,7 @@ test('a promoted mix and its bay tree survive a reload', async ({ page }) => {
 
   // make the mix the family face from the tray
   await page.keyboard.press('f')
-  await page.locator('.family-tray').getByRole('button', { name: /^promote$/i }).click()
+  await page.locator('.family-tray').getByRole('button', { name: /^use$/i }).click()
 
   await page.reload()
   await page.locator('.motif-card').first().waitFor()

@@ -14,7 +14,7 @@ export interface TransportState {
 }
 
 export interface GenerationStatus {
-  message: string | null // last result / error toast
+  message: string | null // last result / error, shown on the gen panel's LCD strip
 }
 
 /** A queued LLM batch awaiting results — rendered as a pulsing placeholder card. */
@@ -94,7 +94,6 @@ export type Action =
   | { type: 'BATCH_FINISHED'; id: string }
   | { type: 'GENERATION_FINISHED'; message: string }
   | { type: 'GENERATION_FAILED'; message: string }
-  | { type: 'CLEAR_MESSAGE' }
 
 function withMotif(state: AppState, id: string, patch: Partial<Motif>): AppState {
   const m = state.motifs.get(id)
@@ -217,8 +216,6 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, generation: { message: action.message } }
     case 'GENERATION_FAILED':
       return { ...state, generation: { message: action.message } }
-    case 'CLEAR_MESSAGE':
-      return { ...state, generation: { message: null } }
   }
 }
 

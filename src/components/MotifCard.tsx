@@ -132,7 +132,7 @@ export const MotifCard = memo(function MotifCard({
         </div>
       ) : (
         <div className="card-footer">
-          <Tooltip label="Play/stop the promoted take (Space)">
+          <Tooltip label="Play/stop the used take (Space)">
             <PlayRound
               playing={isPlaying}
               loading={isLoading}
@@ -159,9 +159,9 @@ export const MotifCard = memo(function MotifCard({
                 }}
                 rightSection={
                   expanded ? (
-                    <CaretDownIcon size={8} weight="bold" />
+                    <CaretDownIcon size={8} />
                   ) : (
-                    <CaretRightIcon size={8} weight="bold" />
+                    <CaretRightIcon size={8} />
                   )
                 }
               >

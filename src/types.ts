@@ -42,17 +42,25 @@ export type MotifSource =
   /** Promoted from the mutation bay: per-part selected variations mixed into one take.
    * variedParts: indices of the parts whose selection deviates from the parent. */
   | { kind: 'bay-mix'; parentId: string; variedParts: number[] }
-  /** Tier-1 offline generation: fresh constrained-random-walk motif (no parents).
-   * recipe = "contour/rhythm" descriptor; seed reproduces the exact motif. */
-  | { kind: 'symbolic'; batchId: string; seed: number; recipe: string }
-  /** Tier-1 genetic child of user-kept motifs: 1 parentId = mutant, 2 = crossover.
-   * Children start their own family (they're fresh triage candidates); ancestry
-   * stays queryable via parentIds. */
-  | { kind: 'ga'; batchId: string; seed: number; op: string; parentIds: string[] }
+  /** Tier-1 offline generation: constrained-random-walk material with no keeper
+   * ancestry (fresh walk or fully fresh-descended evolution survivor).
+   * recipe = "contour/rhythm" or "evolved #rank"; the batch seed (plus the
+   * motif's own metadata and keepers, for evolved batches) reproduces it.
+   * fitness = Gaussian multi-feature score at generation time. */
+  | { kind: 'symbolic'; batchId: string; seed: number; recipe: string; fitness?: number }
+  /** Tier-1 evolution survivor descended from user-kept motifs: parentIds are
+   * its 0–4 distinct keeper ancestors accumulated through crossover/mutation
+   * generations. Children start their own family (fresh triage candidates);
+   * ancestry stays queryable via parentIds. */
+  | { kind: 'ga'; batchId: string; seed: number; op: string; parentIds: string[]; fitness?: number }
   /** Tier-2 offline generation: on-device neural model (SkyTNT midi-model).
    * parentId set when the candidate continued a keeper (neural variation);
-   * like 'ga', children start their own family. */
-  | { kind: 'neural'; batchId: string; seed: number; parentId?: string }
+   * like 'ga', children start their own family. fitness ranks the batch. */
+  | { kind: 'neural'; batchId: string; seed: number; parentId?: string; fitness?: number }
+  /** Tier-1 genetic-riff engine (ga-riffs port): fitness-evolved rhythm genome
+   * plus seeded in-key pitch assignment. preset is the resolved concrete name
+   * (never 'any'); seed reproduces the exact riff. Always a fresh family root. */
+  | { kind: 'genetic'; batchId: string; seed: number; preset: string; fitness: number }
 
 export type Rating = 0 | 1 | 2 | 3 | 4 | 5
 
@@ -114,6 +122,9 @@ export function parentIdOf(m: Motif): string | null {
 export type PartVariationProvenance =
   | { kind: 'llm'; brief: string }
   | { kind: 'transform'; transform: string }
+  | { kind: 'ga'; ops: string; seed: number }
+  /** Dice roll: same notes, a random other sound for this part. */
+  | { kind: 'sound'; instrument: PartInstrument }
 
 /**
  * One node in a per-part mutation tree in the bay: an alternative take on a
@@ -128,6 +139,10 @@ export interface PartVariation {
   parentNodeId: string | null // null = direct child of the original part
   notes: Note[] // this part's notes only (note.part preserved = partIndex)
   provenance: PartVariationProvenance
+  /** Sound override: when this take is selected, its part plays this instrument
+   * instead of the source part's. Takes branching from it inherit the override. */
+  instrument?: PartInstrument
+  preset?: SynthPreset
   /** ≤1 selected node per (sourceMotifId, partIndex); none = the original part plays. */
   selected: boolean
   hidden: boolean // REBASE sets, SHOW HIDDEN clears, PRUNE deletes

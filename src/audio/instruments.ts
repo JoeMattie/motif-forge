@@ -26,9 +26,52 @@ export interface Instrument {
   ready: Promise<void>
   /** Schedule a note at an absolute context time (seconds). Velocity 1-127. */
   noteOn(pitch: number, velocity: number, timeSec: number, durationSec: number): void
+  /** Cancel scheduled notes starting at/after timeSec; sounding notes ring out. */
+  cancelAfter(timeSec: number): void
   /** Stop everything sounding and scheduled. */
   stopAll(): void
   dispose(): void
+}
+
+/**
+ * A Tone voice can't un-schedule a future triggerAttackRelease, so to make
+ * cancelAfter possible the Tone-backed instruments defer far-future triggers
+ * through the context ticker and fire them SCHED_LOOKAHEAD before their start
+ * (the exact time still goes to triggerAttackRelease, so timing is unchanged).
+ * Anything already fired is committed — the engine's swap cutover must sit
+ * beyond this lookahead. Offline contexts fire directly: renders never cancel.
+ * smplr needs none of this — each start() returns a per-note cancel.
+ */
+export const SCHED_LOOKAHEAD = 0.12
+
+function deferredTriggers(context: Tone.Context | Tone.OfflineContext) {
+  const pending = new Map<number, number>() // ticker timeout id -> note start time
+  return {
+    schedule(timeSec: number, fire: () => void): void {
+      const delay = timeSec - context.currentTime - SCHED_LOOKAHEAD
+      if (context.isOffline || delay <= 0) {
+        fire()
+        return
+      }
+      const id = context.setTimeout(() => {
+        pending.delete(id)
+        fire()
+      }, delay)
+      pending.set(id, timeSec)
+    },
+    cancelAfter(timeSec: number): void {
+      for (const [id, t] of pending) {
+        if (t >= timeSec - 1e-6) {
+          context.clearTimeout(id)
+          pending.delete(id)
+        }
+      }
+    },
+    cancelAll(): void {
+      for (const id of pending.keys()) context.clearTimeout(id)
+      pending.clear()
+    },
+  }
 }
 
 export const DEFAULT_PRESET: SynthPreset = {
@@ -54,13 +97,23 @@ export function createToneSynth(
     },
   })
   synth.connect(dest)
+  const defer = deferredTriggers(context)
   return {
     ready: Promise.resolve(),
     noteOn: (pitch, velocity, timeSec, durationSec) => {
-      synth.triggerAttackRelease(pitchToHz(pitch), durationSec, timeSec, velocity / 127)
+      defer.schedule(timeSec, () => {
+        synth.triggerAttackRelease(pitchToHz(pitch), durationSec, timeSec, velocity / 127)
+      })
     },
-    stopAll: () => synth.releaseAll(),
-    dispose: () => synth.dispose(),
+    cancelAfter: (timeSec) => defer.cancelAfter(timeSec),
+    stopAll: () => {
+      defer.cancelAll()
+      synth.releaseAll()
+    },
+    dispose: () => {
+      defer.cancelAll()
+      synth.dispose()
+    },
   }
 }
 
@@ -119,23 +172,29 @@ export function createDrumKit(
   })
   const all = [kick, tom, snare, crash, hat, hatOpen]
   for (const s of all) s.connect(dest)
+  const defer = deferredTriggers(context)
 
   return {
     ready: Promise.resolve(),
     noteOn: (pitch, velocity, t, _dur) => {
-      const vel = velocity / 127
-      if (pitch <= 36) kick.triggerAttackRelease(45, 0.4, t, vel)
-      else if (pitch === 37 || pitch === 38 || pitch === 39 || pitch === 40)
-        snare.triggerAttackRelease(0.14, t, vel)
-      else if (pitch === 42 || pitch === 44) hat.triggerAttackRelease(320, 0.05, t, vel)
-      else if (pitch === 46) hatOpen.triggerAttackRelease(320, 0.3, t, vel)
-      else if (pitch >= 41 && pitch <= 50) tom.triggerAttackRelease(pitchToHz(pitch - 12), 0.3, t, vel)
-      else if (pitch === 49 || pitch === 57) crash.triggerAttackRelease(0.9, t, vel)
-      else if (pitch === 51 || pitch === 59) hatOpen.triggerAttackRelease(480, 0.2, t, vel * 0.8)
-      else hat.triggerAttackRelease(320, 0.05, t, vel) // anything else: tick
+      defer.schedule(t, () => {
+        const vel = velocity / 127
+        if (pitch <= 36) kick.triggerAttackRelease(45, 0.4, t, vel)
+        else if (pitch === 37 || pitch === 38 || pitch === 39 || pitch === 40)
+          snare.triggerAttackRelease(0.14, t, vel)
+        else if (pitch === 42 || pitch === 44) hat.triggerAttackRelease(320, 0.05, t, vel)
+        else if (pitch === 46) hatOpen.triggerAttackRelease(320, 0.3, t, vel)
+        else if (pitch >= 41 && pitch <= 50)
+          tom.triggerAttackRelease(pitchToHz(pitch - 12), 0.3, t, vel)
+        else if (pitch === 49 || pitch === 57) crash.triggerAttackRelease(0.9, t, vel)
+        else if (pitch === 51 || pitch === 59) hatOpen.triggerAttackRelease(480, 0.2, t, vel * 0.8)
+        else hat.triggerAttackRelease(320, 0.05, t, vel) // anything else: tick
+      })
     },
-    stopAll: () => {}, // stop is handled by the per-playback gain ramp + dispose
+    cancelAfter: (timeSec) => defer.cancelAfter(timeSec),
+    stopAll: () => defer.cancelAll(), // sound is handled by the per-playback gain ramp + dispose
     dispose: () => {
+      defer.cancelAll()
       for (const s of all) s.dispose()
     },
   }
@@ -171,15 +230,27 @@ export function createSmplrInstrument(
       : Soundfont(ctx, { ...options, instrument: SOUNDFONT_NAMES[sound] })
   // smplr's stop() only silences voices that have already started; notes still
   // in its internal scheduler queue keep firing. Each start() returns a stop
-  // function that also cancels the queued event — collect and fire them all.
-  let noteStops: ((time?: number) => void)[] = []
+  // function that also cancels the queued event — collect them per note (with
+  // the start time, so cancelAfter can drop only not-yet-started notes).
+  let noteStops: { t: number; stop: (time?: number) => void }[] = []
   return {
     ready: inst.ready,
     noteOn: (pitch, velocity, timeSec, durationSec) => {
-      noteStops.push(inst.start({ note: pitch, velocity, time: timeSec, duration: durationSec }))
+      noteStops.push({
+        t: timeSec,
+        stop: inst.start({ note: pitch, velocity, time: timeSec, duration: durationSec }),
+      })
+    },
+    cancelAfter: (timeSec) => {
+      const keep: typeof noteStops = []
+      for (const n of noteStops) {
+        if (n.t >= timeSec - 1e-6) n.stop()
+        else keep.push(n)
+      }
+      noteStops = keep
     },
     stopAll: () => {
-      for (const stopNote of noteStops) stopNote()
+      for (const n of noteStops) n.stop()
       noteStops = []
       inst.stop()
     },

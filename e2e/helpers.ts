@@ -1,7 +1,21 @@
-import type { Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 
 /** Names of the three dev fixtures seeded on first run (src/core/sampleMotifs.ts). */
 export const SEED_NAMES = ['Ember (stepwise)', 'Orbit (arpeggiated)', 'Undertow (syncopated)']
+
+/** Open the mutation bay for the selected card and wait for the drawer's
+ * slide-up to finish. The bay's CLAUDE/ADV popovers are portaled outside the
+ * drawer and positioned against their anchor once — clicking into one while
+ * the drawer is still moving lands outside it and reads as a dismiss. */
+export async function openBay(page: Page): Promise<void> {
+  await page.keyboard.press('m')
+  await expect(page.locator('.bay')).toBeVisible()
+  await page
+    .locator('.mantine-Drawer-content')
+    .evaluate((el) =>
+      Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished.catch(() => {}))),
+    )
+}
 
 /** A minimal motif that passes validation against the default brief (D dorian, 4 bars, 4/4). */
 export function mockMotif(name: string): Record<string, unknown> {

@@ -13,7 +13,7 @@ import type { Instrument } from './instruments'
  * Schedule every note of the motif from t0, routing each note to its part's
  * instrument (instruments[note.part], clamped). Returns the end time in seconds.
  * fromBeat starts playback mid-motif (notes that already began are skipped) —
- * used by the A/B audition's swap-on-bar.
+ * used by the engine's mid-flight swap.
  */
 export function scheduleMotif(
   instruments: Instrument[],

@@ -1,4 +1,4 @@
-import type { Motif, Note, PartVariation, PartVariationProvenance } from '../types'
+import type { Motif, Note, Part, PartVariation, PartVariationProvenance } from '../types'
 
 /**
  * Pure helpers for the Mutation Bay's per-part variation trees.
@@ -82,14 +82,24 @@ export function compositeNotes(source: Motif, selection: Map<number, PartVariati
 
 /**
  * A playable/promotable motif from the current selection. Parts, bars, key,
- * and timeSig come from the source, so engine part-routing stays aligned.
+ * and timeSig come from the source, so engine part-routing stays aligned —
+ * except that a selected take's sound override swaps its part's instrument
+ * (the source part's preset never survives a swap; the take's own rolled
+ * patch rides along only when the override is 'synth').
  */
 export function compositeMotif(
   source: Motif,
   selection: Map<number, PartVariation>,
   id: string,
 ): Motif {
-  return { ...source, id, notes: compositeNotes(source, selection) }
+  const parts = source.parts.map((p, i): Part => {
+    const sel = selection.get(i)
+    if (!sel?.instrument) return p
+    const part: Part = { name: p.name, instrument: sel.instrument }
+    if (sel.instrument === 'synth' && sel.preset) part.preset = sel.preset
+    return part
+  })
+  return { ...source, id, parts, notes: compositeNotes(source, selection) }
 }
 
 /**

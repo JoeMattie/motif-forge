@@ -46,10 +46,19 @@ export function TriageGrid() {
   // Built on the state getter so they're referentially stable — memoized
   // cards receive the same callback across selection moves and fold toggles.
   const toggleFold = useCallback(
-    (m: Motif) => {
+    (m: Motif): string | null => {
       const { motifs, expandedFamilyId } = getState()
       const rid = rootIdOf(m, motifs)
-      dispatch({ type: 'SET_EXPANDED_FAMILY', id: expandedFamilyId === rid ? null : rid })
+      if (expandedFamilyId === rid) {
+        dispatch({ type: 'SET_EXPANDED_FAMILY', id: null })
+        return null
+      }
+      dispatch({ type: 'SET_EXPANDED_FAMILY', id: rid })
+      // Report the root of a freshly opened walkable tray: the keyboard path
+      // moves the cursor onto it (F enters the panel), while mouse opens
+      // (card/chip click) leave the selection on the card that was clicked.
+      const fam = buildFamilies(motifs).find((f) => f.rootId === rid)
+      return fam && fam.variants.length > 0 ? rid : null
     },
     [dispatch, getState],
   )
@@ -62,7 +71,14 @@ export function TriageGrid() {
       const { motifs } = getState()
       const fam = buildFamilies(motifs).find((f) => f.rootId === rootIdOf(m, motifs))
       if (fam) {
-        dispatch({ type: 'MOTIF_PROMOTED', id: m.id, familyIds: fam.members.map((x) => x.id) })
+        // Toggle: USE on the already-used take clears the flag family-wide,
+        // so the face falls back to the root.
+        const inUse = fam.face.id === m.id && !!motifs.get(m.id)?.promoted
+        dispatch({
+          type: 'MOTIF_PROMOTED',
+          id: inUse ? '' : m.id,
+          familyIds: fam.members.map((x) => x.id),
+        })
       }
     },
     [dispatch, getState],
@@ -179,7 +195,7 @@ export function TriageGrid() {
         <span className="kbd-legend">
           <Kbd>← → ↑ ↓</Kbd> nav · <Kbd>space</Kbd> play · <Kbd>1–5</Kbd> rate ·{' '}
           <Kbd>x</Kbd> discard · <Mark className="hk">u</Mark>ndo ·{' '}
-          <Mark className="hk">f</Mark>old out · <Mark className="hk">p</Mark>romote ·{' '}
+          <Mark className="hk">f</Mark>old out · <Kbd>↵</Kbd> use ·{' '}
           <Mark className="hk">m</Mark>utate
         </span>
       </div>

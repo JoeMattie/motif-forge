@@ -12,6 +12,10 @@ interface KnobProps {
   detents: number
   /** Dark (ink) knob or light (surface) knob. */
   variant?: 'dark' | 'light'
+  /** Hide the built-in caption when the caller renders its own (e.g. with a dice toggle). */
+  showLabel?: boolean
+  /** Dim the knob and ignore input (e.g. while a dice toggle overrides the value). */
+  disabled?: boolean
 }
 
 /** Hardware rotary sweep: 270°, from 7 o'clock (225°) clockwise to 5 o'clock. */
@@ -22,7 +26,16 @@ const START = 225
  * Rotary hardware knob — a restyled Mantine AngleSlider restricted to a 270°
  * sweep of evenly spaced detents (drag or arrow keys to turn).
  */
-export function Knob({ label, value, position, onPosition, detents, variant = 'dark' }: KnobProps) {
+export function Knob({
+  label,
+  value,
+  position,
+  onPosition,
+  detents,
+  variant = 'dark',
+  showLabel = true,
+  disabled = false,
+}: KnobProps) {
   const stepDeg = SWEEP / (detents - 1)
   const marks = Array.from({ length: detents }, (_, i) => ({
     value: (START + i * stepDeg) % 360,
@@ -36,10 +49,12 @@ export function Knob({ label, value, position, onPosition, detents, variant = 'd
   }
 
   return (
-    <div className="knob-wrap">
-      <div className="knob-label">
-        {label} <b>{value}</b>
-      </div>
+    <div className={`knob-wrap${disabled ? ' disabled' : ''}`}>
+      {showLabel && (
+        <div className="knob-label">
+          {label} <b>{value}</b>
+        </div>
+      )}
       <AngleSlider
         className={`knob-slider ${variant}`}
         aria-label={label}

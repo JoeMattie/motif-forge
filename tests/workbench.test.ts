@@ -110,6 +110,43 @@ describe('composite', () => {
     expect(mix.parts).toEqual(src.parts)
     expect(mix.bars).toBe(src.bars)
   })
+
+  test('selected take with a sound override swaps only its part instrument', () => {
+    const src = makeSource()
+    src.parts[0].preset = {
+      oscillator: 'sawtooth',
+      envelope: { attack: 0.01, decay: 0.2, sustain: 0.5, release: 0.3 },
+    }
+    const v = makeVariation({
+      id: 'a',
+      partIndex: 0,
+      selected: true,
+      instrument: 'piano',
+      provenance: { kind: 'sound', instrument: 'piano' },
+    })
+    const mix = compositeMotif(src, selectionFor(toMap([v]), 'src'), 'src::mix')
+    // the source part's synth preset must not survive the swap to piano
+    expect(mix.parts[0]).toEqual({ name: 'lead', instrument: 'piano' })
+    expect(mix.parts[1]).toEqual(src.parts[1])
+  })
+
+  test('a synth sound override carries its rolled preset into the mix part', () => {
+    const src = makeSource()
+    const preset = {
+      oscillator: 'square' as const,
+      envelope: { attack: 0.05, decay: 0.1, sustain: 0.4, release: 0.6 },
+    }
+    const v = makeVariation({
+      id: 'a',
+      partIndex: 1,
+      selected: true,
+      instrument: 'synth',
+      preset,
+      provenance: { kind: 'sound', instrument: 'synth' },
+    })
+    const mix = compositeMotif(src, selectionFor(toMap([v]), 'src'), 'src::mix')
+    expect(mix.parts[1]).toEqual({ name: 'bass', instrument: 'synth', preset })
+  })
 })
 
 describe('contextMotifForNode', () => {

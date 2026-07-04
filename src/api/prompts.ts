@@ -87,13 +87,6 @@ For EACH motif, choose your own: key and mode (any of ${MODES.join(', ')}), temp
 ${surpriseHardRules()}`
 }
 
-/** Built-in brief for the bay's one-click per-part MUTATE key. */
-export function partMutationBrief(partName: string, isDrums: boolean): string {
-  return isDrums
-    ? `Write alternative grooves for the "${partName}" part only: keep it supportive of the melodic material, and vary the feel across takes — accents, syncopation, hat density, ghost notes. Each take should be a genuinely different groove idea.`
-    : `Write alternative takes on the "${partName}" part only: keep its role and register, vary its contour and rhythm, and make it sit well against the other parts. Each take should be a genuinely different idea while staying recognizably related to the parent.`
-}
-
 export interface MutationOptions {
   lockRhythm?: boolean
   /** Part indices the LLM must copy into every child verbatim (mutation-bay LOCK). */

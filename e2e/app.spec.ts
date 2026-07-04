@@ -33,10 +33,10 @@ test('LCD piano-roll thumbnails render one rect per note', async ({ page }) => {
 test('view pills move between triage, library, and concepts', async ({ page }) => {
   await gotoApp(page)
   const header = page.locator('.wb-header')
-  await header.getByRole('button', { name: /^library$/i }).click()
+  await header.getByRole('tab', { name: /^library$/i }).click()
   await expect(page.locator('.lib-toolbar')).toBeVisible()
   await expect(page.locator('.filter-row')).toHaveCount(0)
-  await header.getByRole('button', { name: /^triage$/i }).click()
+  await header.getByRole('tab', { name: /^triage$/i }).click()
   await expect(page.locator('.filter-row')).toBeVisible()
 })
 

@@ -52,7 +52,7 @@ export async function callClaude(prompt: string, maxTokens: number): Promise<Cla
   })
   if (response.status === 401) {
     throw new Error(
-      'API auth failed — check the key under KEY in the header (or, in dev without a key, ANTHROPIC_API_KEY in .env.local)',
+      'API auth failed - check the key under KEY in the header (or, in dev ANTHROPIC_API_KEY in .env.local)',
     )
   }
   if (!response.ok) {

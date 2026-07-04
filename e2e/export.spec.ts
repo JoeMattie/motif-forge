@@ -29,7 +29,7 @@ test('library EXPORT ALL and per-family .MID download promoted takes', async ({ 
   await gotoApp(page)
   await page.keyboard.press('5') // rate Ember so it clears the library's ★3 gate
 
-  await page.locator('.wb-header').getByRole('button', { name: /^library$/i }).click()
+  await page.locator('.wb-header').getByRole('tab', { name: /^library$/i }).click()
   await expect(page.locator('.motif-card')).toHaveCount(1)
 
   const downloadPromise = page.waitForEvent('download')

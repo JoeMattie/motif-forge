@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, type ReactNode } from 'react'
-import { ActionIcon, Badge, Button, Tooltip } from '@mantine/core'
-import { CaretDownIcon, CaretRightIcon, CircleIcon } from '@phosphor-icons/react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ActionIcon, Badge, Button, Group, Popover, Textarea, Tooltip } from '@mantine/core'
+import { CaretDownIcon, CaretRightIcon, CircleIcon, DiceFiveIcon } from '@phosphor-icons/react'
 import type { Motif, Note, PartVariation } from '../../types'
 import type { PartTreeNode } from '../../core/workbench'
+import type { Transform } from '../../core/transforms'
 import { LcdRoll } from '../LcdRoll'
+import { AdvancedPop } from './AdvancedPop'
 
 /** Keyboard cursor in the bay: a part row + a node in its tree (null = the origin cell). */
 export interface BayFocus {
@@ -14,6 +16,7 @@ export interface BayFocus {
 const PART_COLOR_CLASSES = ['part-0', 'part-1', 'part-2', 'part-3', 'part-4', 'part-5']
 
 export function provenanceLabel(v: PartVariation): string {
+  if (v.provenance.kind === 'sound') return v.provenance.instrument.toUpperCase()
   if (v.provenance.kind === 'transform') {
     return v.provenance.transform
       .replace('retrograde-inversion', 'R-INV')
@@ -23,15 +26,101 @@ export function provenanceLabel(v: PartVariation): string {
       .toUpperCase()
       .slice(0, 16)
   }
-  return 'VAR'
+  return v.provenance.kind === 'ga' ? 'EVO' : 'VAR'
 }
 
 interface RowCallbacks {
   onFocus: (nodeId: string | null) => void
   /** Select a node into the mix (null = revert this part to the original). */
   onSelect: (node: PartVariation | null) => void
-  /** One-click LLM mutate from a node (null = from the origin). */
+  /** Instant GA mutate from a node (null = from the origin). */
   onMutate: (node: PartVariation | null) => void
+  /** Targeted Claude rewrite of this part from a node, with the user's brief. */
+  onClaude: (node: PartVariation | null, brief: string) => void
+  /** Deterministic transform of a take from the ADV dropdown (null = the origin). */
+  onTransform: (node: PartVariation | null, t: Transform) => void
+  /** Toggle the ADV dropdown on a take (null = the origin cell). */
+  onToggleAdvanced: (nodeId: string | null) => void
+  onCloseAdvanced: () => void
+  /** Dice: a new take of this part on a random other sound, straight into the mix. */
+  onSoundRoll: () => void
+}
+
+/**
+ * The CLAUDE key: pops a small text box asking for a targeted change, then
+ * runs an LLM take on this part only. Grayed out without an API key. The
+ * popover stays open after Run so it can be fired again with a tweaked brief;
+ * `busy` blocks overlapping runs (one take per click).
+ */
+function ClaudePop({
+  variant,
+  ready,
+  busy,
+  partName,
+  onRun,
+}: {
+  variant: 'chip' | 'button'
+  ready: boolean
+  busy: boolean
+  partName: string
+  onRun: (brief: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [brief, setBrief] = useState('')
+  const run = () => {
+    const b = brief.trim()
+    if (!b || busy) return
+    onRun(b)
+  }
+  const toggle = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setOpen((o) => !o)
+  }
+  const tip = ready
+    ? `Ask Claude for a targeted change to the ${partName} part — every other part locked`
+    : 'Needs your Anthropic API key — set it under KEY in the header'
+  return (
+    <Popover opened={open} onChange={setOpen} width={280} position="bottom-end" trapFocus>
+      <Popover.Target>
+        {/* wrapper spans so the tooltip still hovers when the key is disabled */}
+        <span className="chip-tip-wrap">
+          <Tooltip label={tip}>
+            <span className="chip-tip-wrap">
+              {variant === 'button' ? (
+                <Button size="compact-xs" className="green" disabled={!ready} data-latched={open} onClick={toggle}>
+                  Claude
+                </Button>
+              ) : (
+                <button type="button" className="promote-chip" disabled={!ready} onClick={toggle}>
+                  Claude
+                </button>
+              )}
+            </span>
+          </Tooltip>
+        </span>
+      </Popover.Target>
+      <Popover.Dropdown onClick={(e) => e.stopPropagation()}>
+        <Textarea
+          rows={2}
+          data-autofocus
+          placeholder="targeted change — e.g. more syncopation, land phrase ends on the 5th"
+          value={brief}
+          onChange={(e) => setBrief(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              run()
+            }
+          }}
+        />
+        <Group justify="flex-end" mt={6}>
+          <Button className="accent" disabled={!brief.trim() || busy} onClick={run}>
+            {busy ? 'Running…' : 'Run'}
+          </Button>
+        </Group>
+      </Popover.Dropdown>
+    </Popover>
+  )
 }
 
 function NodeCard({
@@ -42,6 +131,10 @@ function NodeCard({
   inMix,
   ghost,
   isDrums,
+  partName,
+  claudeReady,
+  busy,
+  advOpen,
   mini,
   depth,
   callbacks,
@@ -53,6 +146,12 @@ function NodeCard({
   inMix: boolean
   ghost: boolean
   isDrums: boolean
+  partName: string
+  claudeReady: boolean
+  /** A Claude run is in flight on this row — blocks overlapping runs. */
+  busy: boolean
+  /** This node's ADV dropdown is open (controlled by the bay). */
+  advOpen: boolean
   /** Collapsed row: tiny box with just the mini roll. */
   mini: boolean
   /** Generation: 1 = mutation of the origin. Each generation renders smaller. */
@@ -71,8 +170,6 @@ function NodeCard({
   )
 
   const badge = provenanceLabel(node)
-  const badgeCls =
-    node.provenance.kind === 'transform' ? 'transform' : isDrums ? 'var-drums' : 'var'
 
   if (mini) {
     return (
@@ -98,11 +195,6 @@ function NodeCard({
       onClick={() => callbacks.onFocus(node.id)}
     >
       <div className="node-head">
-        <span className={`node-badge ${badgeCls}`}>{badge}</span>
-        {inMix && <CircleIcon size={7} weight="fill" color="var(--accent)" />}
-      </div>
-      <LcdRoll motif={lcdMotif} height={lcdHeight} />
-      <div className="node-foot">
         <Tooltip label="Put this take in the mix — it plays instead of the original (Enter)">
           <button
             type="button"
@@ -115,15 +207,22 @@ function NodeCard({
           >
             {inMix ? (
               <>
-                In mix <CircleIcon size={6} weight="fill" />
+                In mix <CircleIcon size={6} />
               </>
             ) : (
               'Use'
             )}
           </button>
         </Tooltip>
-        <span className="spacer" />
-        <Tooltip label="Generate 5 LLM takes branching from THIS take (m)">
+        {(node.provenance.kind === 'transform' || node.provenance.kind === 'sound') && (
+          <span className={`node-badge ${node.provenance.kind}`}>{badge}</span>
+        )}
+      </div>
+      <LcdRoll motif={lcdMotif} height={lcdHeight} />
+      <div className="node-foot">
+        <Tooltip
+          label={`Evolve one instant take branching from THIS take — a small ${isDrums ? 'rhythm' : 'in-scale'} edit (m)`}
+        >
           <button
             type="button"
             className="promote-chip"
@@ -136,6 +235,26 @@ function NodeCard({
             Mutate
           </button>
         </Tooltip>
+        <ClaudePop
+          variant="chip"
+          ready={claudeReady}
+          busy={busy}
+          partName={partName}
+          onRun={(brief) => {
+            callbacks.onFocus(node.id)
+            callbacks.onClaude(node, brief)
+          }}
+        />
+        <AdvancedPop
+          variant="chip"
+          opened={advOpen}
+          sourceMode={source.mode}
+          isDrums={isDrums}
+          baseTake={node.notes}
+          onToggle={() => callbacks.onToggleAdvanced(node.id)}
+          onClose={callbacks.onCloseAdvanced}
+          onApplyTransform={(t) => callbacks.onTransform(node, t)}
+        />
       </div>
     </div>
   )
@@ -151,6 +270,10 @@ function TreeColumn({
   pendingParents,
   mixId,
   isDrums,
+  partName,
+  claudeReady,
+  busy,
+  advancedNodeId,
   mini,
   depth,
   callbacks,
@@ -164,6 +287,11 @@ function TreeColumn({
   pendingParents: (string | null)[]
   mixId: string
   isDrums: boolean
+  partName: string
+  claudeReady: boolean
+  busy: boolean
+  /** Take whose ADV dropdown is open: undefined = none, null = the origin. */
+  advancedNodeId: string | null | undefined
   mini: boolean
   depth: number
   callbacks: RowCallbacks
@@ -186,6 +314,10 @@ function TreeColumn({
               inMix={inMix}
               ghost={v.hidden}
               isDrums={isDrums}
+              partName={partName}
+              claudeReady={claudeReady}
+              busy={busy}
+              advOpen={advancedNodeId === v.id}
               mini={mini}
               depth={depth}
               callbacks={callbacks}
@@ -200,6 +332,10 @@ function TreeColumn({
               pendingParents={pendingParents}
               mixId={mixId}
               isDrums={isDrums}
+              partName={partName}
+              claudeReady={claudeReady}
+              busy={busy}
+              advancedNodeId={advancedNodeId}
               mini={mini}
               depth={depth + 1}
               callbacks={callbacks}
@@ -210,7 +346,7 @@ function TreeColumn({
       {Array.from({ length: pendingHere }, (_, i) => (
         <div className="tree-node-wrap" key={`pending-${i}`}>
           <div className={`tree-node pending${mini ? ' mini' : ''}`}>
-            {mini ? '5…' : '5 takes inbound…'}
+            {mini ? '…' : 'Claude take inbound…'}
           </div>
         </div>
       ))}
@@ -234,10 +370,11 @@ export function PartRow({
   mixId,
   collapsed,
   onToggleCollapse,
-  advancedOpen,
-  onToggleAdvanced,
+  canRollSound,
+  advancedNodeId,
+  claudeReady,
+  busy,
   callbacks,
-  children,
 }: {
   source: Motif
   partIndex: number
@@ -258,11 +395,15 @@ export function PartRow({
   /** Collapsed = a slim strip; the LCD and tree are hidden. */
   collapsed: boolean
   onToggleCollapse: () => void
-  advancedOpen: boolean
-  onToggleAdvanced: () => void
+  /** Whether the sound dice applies — false for drum parts and partless motifs. */
+  canRollSound: boolean
+  /** Take whose ADV dropdown is open: undefined = none, null = the origin. */
+  advancedNodeId: string | null | undefined
+  /** Whether Claude-powered keys are usable (API key present or dev proxy). */
+  claudeReady: boolean
+  /** A Claude run is in flight on this row — blocks overlapping runs. */
+  busy: boolean
   callbacks: RowCallbacks
-  /** The advanced panel, rendered full-width above the row when open. */
-  children?: ReactNode
 }) {
   const originFocused = focus !== null && focus.nodeId === null
   const originInMix = selectedId === null
@@ -298,7 +439,6 @@ export function PartRow({
 
   return (
     <div className={`module part-row${collapsed ? ' compact' : ''}`}>
-      {children}
       <div className="part-row-scroll">
         <div
           ref={originRef}
@@ -308,6 +448,21 @@ export function PartRow({
           <div className="origin-head">
             {swatch}
             <span className="origin-name">{partName}</span>
+            {canRollSound && (
+              <Tooltip label="Roll a random other sound for this part — a new take, straight into the mix (s)">
+                <ActionIcon
+                  size="xs"
+                  className="sound-dice"
+                  aria-label={`Random sound for ${partName}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    callbacks.onSoundRoll()
+                  }}
+                >
+                  <DiceFiveIcon size={10} />
+                </ActionIcon>
+              </Tooltip>
+            )}
             <span className="origin-inst">{instrument}</span>
             <Tooltip
               label={collapsed ? 'Expand this track' : 'Collapse this track — takes shrink to mini boxes'}
@@ -321,9 +476,9 @@ export function PartRow({
                 }}
               >
                 {collapsed ? (
-                  <CaretRightIcon size={10} weight="bold" />
+                  <CaretRightIcon size={10} />
                 ) : (
-                  <CaretDownIcon size={10} weight="bold" />
+                  <CaretDownIcon size={10} />
                 )}
               </ActionIcon>
             </Tooltip>
@@ -357,7 +512,7 @@ export function PartRow({
                   >
                     {originInMix ? (
                       <>
-                        In mix <CircleIcon size={6} weight="fill" />
+                        In mix <CircleIcon size={6} />
                       </>
                     ) : (
                       'Use'
@@ -365,7 +520,9 @@ export function PartRow({
                   </button>
                 </Tooltip>
                 <span className="spacer" />
-                <Tooltip label="Generate 5 LLM takes on this part only — every other part is locked (m)">
+                <Tooltip
+                  label={`Evolve one instant take of this part — a small ${isDrums ? 'rhythm' : 'in-scale'} edit, fully offline (m)`}
+                >
                   <Button
                     className="accent"
                     size="compact-xs"
@@ -378,18 +535,26 @@ export function PartRow({
                     Mutate
                   </Button>
                 </Tooltip>
-                <Tooltip label="Deterministic transforms + a custom mutation brief for this part (a)">
-                  <Button
-                    size="compact-xs"
-                    data-latched={advancedOpen}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onToggleAdvanced()
-                    }}
-                  >
-                    Adv
-                  </Button>
-                </Tooltip>
+                <ClaudePop
+                  variant="button"
+                  ready={claudeReady}
+                  busy={busy}
+                  partName={partName}
+                  onRun={(brief) => {
+                    callbacks.onFocus(null)
+                    callbacks.onClaude(null, brief)
+                  }}
+                />
+                <AdvancedPop
+                  variant="button"
+                  opened={advancedNodeId === null}
+                  sourceMode={source.mode}
+                  isDrums={isDrums}
+                  baseTake={originNotes}
+                  onToggle={() => callbacks.onToggleAdvanced(null)}
+                  onClose={callbacks.onCloseAdvanced}
+                  onApplyTransform={(t) => callbacks.onTransform(null, t)}
+                />
               </div>
             </>
           )}
@@ -404,6 +569,10 @@ export function PartRow({
           pendingParents={pendingParents}
           mixId={mixId}
           isDrums={isDrums}
+          partName={partName}
+          claudeReady={claudeReady}
+          busy={busy}
+          advancedNodeId={advancedNodeId}
           mini={collapsed}
           depth={1}
           callbacks={callbacks}

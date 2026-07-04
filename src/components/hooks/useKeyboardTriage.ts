@@ -21,11 +21,13 @@ export function isTypingTarget(t: EventTarget | null): boolean {
 }
 
 export interface TriageKeyHandlers {
-  /** F — fold/unfold the selected family's tray. */
-  onFold?: (current: Motif) => void
+  /** F — fold/unfold the selected family's tray. Returns the family root's id
+   * when the fold OPENED a walkable tray (it has variants), so the cursor can
+   * enter the panel immediately; null otherwise. */
+  onFold?: (current: Motif) => string | null
   /** M — open the mutation bay for the selected family. */
   onMutate?: (current: Motif) => void
-  /** P — promote the cursor motif as its family's face. */
+  /** Enter — toggle the cursor motif as its family's face (USE). */
   onPromote?: (current: Motif) => void
   /** The open family tray, if any: down-arrow on its anchor card descends into
    * it, and arrows/space/rate/discard then operate on the tray members. */
@@ -35,7 +37,8 @@ export interface TriageKeyHandlers {
 /**
  * Global keyboard triage: arrows navigate, space toggles playback,
  * 1-5 rates (+advance), x discards (+advance), u restores last discard,
- * f folds out the family tray, m opens the mutation bay.
+ * f folds out the family tray, m opens the mutation bay,
+ * Enter toggles the cursor motif as its family's face (USE).
  * Selection is app state, not DOM focus.
  *
  * The listener is registered ONCE per `enabled` — everything it needs is read
@@ -55,6 +58,10 @@ export function useKeyboardTriage(
   useEffect(() => {
     latest.current = { visibleMotifs, columns, handlers }
   })
+  // Whether the cursor sits INSIDE the open tray. Needed because the family's
+  // face appears both as the grid anchor and as a tray card under the same
+  // motif id — this flag decides which of the two the arrows should serve.
+  const inTray = useRef(false)
 
   useEffect(() => {
     if (!enabled) return
@@ -79,16 +86,20 @@ export function useKeyboardTriage(
         })
 
       // ---- inside the open family tray: arrows walk the mini-cards ----
-      const trayIndex =
-        tray && state.selectedId && state.selectedId !== tray.anchorId
+      const trayIndex = !tray || !state.selectedId
+        ? -1
+        : state.selectedId !== tray.anchorId
           ? tray.motifs.findIndex((m) => m.id === state.selectedId)
-          : -1
+          : inTray.current
+            ? tray.motifs.findIndex((m) => m.id === tray.anchorId)
+            : -1
+      inTray.current = trayIndex >= 0
       if (tray && trayIndex >= 0) {
         const trayCurrent = tray.motifs[trayIndex]
-        // step over the member that doubles as the grid anchor (promoted face)
+        // the walk includes the member that doubles as the grid anchor (the
+        // in-use face) — its tray copy carries the focus bar like any other
         const moveTray = (dir: 1 | -1) => {
-          let i = trayIndex + dir
-          if (tray.motifs[i]?.id === tray.anchorId) i += dir
+          const i = trayIndex + dir
           if (i >= 0 && i < tray.motifs.length) {
             dispatch({ type: 'SELECT', id: tray.motifs[i].id })
           }
@@ -106,6 +117,7 @@ export function useKeyboardTriage(
           case 'ArrowDown':
             // back up to the anchor card in the grid
             e.preventDefault()
+            inTray.current = false
             dispatch({ type: 'SELECT', id: tray.anchorId })
             break
           case ' ':
@@ -127,13 +139,16 @@ export function useKeyboardTriage(
             if (state.lastDiscardedId) dispatch({ type: 'MOTIF_RESTORED', id: state.lastDiscardedId })
             break
           case 'f':
+            inTray.current = false
             dispatch({ type: 'SELECT', id: tray.anchorId })
             if (onFold) onFold(trayCurrent)
             break
           case 'm':
             if (onMutate) onMutate(trayCurrent)
             break
-          case 'p':
+          case 'Enter':
+            // preventDefault so a still-focused button doesn't also re-click
+            e.preventDefault()
             if (onPromote) onPromote(trayCurrent)
             break
           default:
@@ -176,13 +191,12 @@ export function useKeyboardTriage(
         }
         case 'ArrowDown': {
           e.preventDefault()
-          // descend into the open tray from its anchor card
-          if (tray && current && current.id === tray.anchorId) {
-            const first = tray.motifs.find((m) => m.id !== tray.anchorId)
-            if (first) {
-              dispatch({ type: 'SELECT', id: first.id })
-              break
-            }
+          // descend into the open tray from its anchor card, onto its FIRST
+          // member (the origin) — even when that's the anchor's own copy
+          if (tray && current && current.id === tray.anchorId && tray.motifs.length > 1) {
+            inTray.current = true
+            dispatch({ type: 'SELECT', id: tray.motifs[0].id })
+            break
           }
           if (index < 0) {
             moveTo(0)
@@ -217,13 +231,22 @@ export function useKeyboardTriage(
             dispatch({ type: 'MOTIF_RESTORED', id: state.lastDiscardedId })
           }
           break
-        case 'f':
-          if (current && onFold) onFold(current)
+        case 'f': {
+          if (!current || !onFold) break
+          // opening a walkable tray moves the cursor inside it right away,
+          // onto its first card (the origin)
+          const openedRoot = onFold(current)
+          if (openedRoot) {
+            inTray.current = true
+            dispatch({ type: 'SELECT', id: openedRoot })
+          }
           break
+        }
         case 'm':
           if (current && onMutate) onMutate(current)
           break
-        case 'p':
+        case 'Enter':
+          e.preventDefault()
           if (current && onPromote) onPromote(current)
           break
         default:

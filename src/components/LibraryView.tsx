@@ -33,7 +33,7 @@ function ConceptChip({ family }: { family: Family }) {
       <Menu.Target>
         <Tooltip label="Tag this family to a song concept — variants inherit the tag">
           <button type="button" className={`concept-chip${concept ? '' : ' none'}`} onClick={(e) => e.stopPropagation()}>
-            {concept ? concept.name : 'No concept'} <CaretDownIcon size={8} weight="bold" />
+            {concept ? concept.name : 'No concept'} <CaretDownIcon size={8} />
           </button>
         </Tooltip>
       </Menu.Target>
@@ -174,7 +174,7 @@ export function LibraryView() {
           {[1, 2, 3, 4, 5].map((r) => (
             <Tooltip key={r} label={`Only families with a take rated ★${r} or higher`}>
               <button type="button" className="starkey" data-latched={minRating === r} onClick={() => setMinRating(r)}>
-                <StarIcon size={8} weight="fill" />
+                <StarIcon size={8} />
                 {r}
               </button>
             </Tooltip>
@@ -209,11 +209,11 @@ export function LibraryView() {
           className="dark"
           disabled={!newConcept.trim()}
           onClick={createConcept}
-          leftSection={<PlusIcon size={10} weight="bold" />}
+          leftSection={<PlusIcon size={10} />}
         >
           Concept
         </Button>
-        <Tooltip label="Download the promoted take of every family shown as .mid files">
+        <Tooltip label="Download the used take of every family shown as .mid files">
           <Button className="accent" disabled={kept.length === 0} onClick={exportAllMidi}>
             Export all .MID
           </Button>

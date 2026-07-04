@@ -4,6 +4,7 @@ import {
   ArrowRightIcon,
   CaretUpIcon,
   CircleIcon,
+  KeyReturnIcon,
   PlusIcon,
   XIcon,
 } from '@phosphor-icons/react'
@@ -26,7 +27,9 @@ function TrayCard({ motif, family, isOrigin }: { motif: Motif; family: Family; i
   const isLoading = useIsLoading(motif.id)
   const cardRef = useRef<HTMLDivElement>(null)
   // Keyboard triage can descend into the tray — mark and reveal the cursor.
-  const selected = state.selectedId === motif.id && family.face.id !== motif.id
+  // The face's tray copy mirrors the grid anchor's selection (same motif), so
+  // the in-use take gets a focus bar too.
+  const selected = state.selectedId === motif.id
   const promoted = family.face.id === motif.id && (motif.promoted ?? isOrigin)
   const badge = variantBadge(motif)
 
@@ -121,32 +124,35 @@ function TrayCard({ motif, family, isOrigin }: { motif: Motif; family: Family; i
                 dispatch({ type: 'MOTIF_DISCARDED', id: motif.id })
               }}
             >
-              <XIcon size={10} weight="bold" />
+              <XIcon size={10} />
             </ActionIcon>
           </Tooltip>
         )}
-        <Tooltip label="Make this take the family's face — what the grid shows, plays, and exports">
+        <Tooltip label="Use this take as the family's face — what the grid shows, plays, and exports (↵ toggles)">
           <button
             type="button"
             className="promote-chip"
-            aria-label={family.face.id === motif.id ? 'Promoted' : 'Promote'}
+            aria-label={family.face.id === motif.id ? 'In use' : 'Use'}
             data-promoted={family.face.id === motif.id}
             onClick={(e) => {
               e.stopPropagation()
+              // Toggle: clicking USE on the in-use take clears the flag so the
+              // face falls back to the origin.
+              const inUse = family.face.id === motif.id && !!motif.promoted
               dispatch({
                 type: 'MOTIF_PROMOTED',
-                id: motif.id,
+                id: inUse ? '' : motif.id,
                 familyIds: family.members.map((m) => m.id),
               })
             }}
           >
             {family.face.id === motif.id ? (
               <>
-                Promoted <CircleIcon size={6} weight="fill" />
+                In use <CircleIcon size={6} />
               </>
             ) : (
               <>
-                <Mark className="hk">P</Mark>romote
+                Use <KeyReturnIcon size={8} />
               </>
             )}
           </button>
@@ -167,7 +173,7 @@ export function FamilyTray({ family, onFold }: { family: Family; onFold: () => v
         <span className="family-tray-title">FAMILY — {family.root.name}</span>
         <span className="family-tray-meta">
           {family.variants.length} variant{family.variants.length === 1 ? '' : 's'} · best{' '}
-          {'★'.repeat(Math.max(1, family.bestRating))} · promoted take is what triage plays &amp;
+          {'★'.repeat(Math.max(1, family.bestRating))} · used take is what triage plays &amp;
           exports
         </span>
         <span className="spacer" />
@@ -175,7 +181,7 @@ export function FamilyTray({ family, onFold }: { family: Family; onFold: () => v
           <Button
             aria-label="Open mutation bay"
             onClick={openBay}
-            rightSection={<ArrowRightIcon size={10} weight="bold" />}
+            rightSection={<ArrowRightIcon size={10} />}
           >
             {/* single span: the Button label is a flex container, which would
                 collapse the whitespace between bare text nodes */}
@@ -187,7 +193,7 @@ export function FamilyTray({ family, onFold }: { family: Family; onFold: () => v
         <Button
           aria-label="Fold"
           onClick={onFold}
-          leftSection={<CaretUpIcon size={10} weight="bold" />}
+          leftSection={<CaretUpIcon size={10} />}
         >
           <Mark className="hk">F</Mark>OLD
         </Button>
@@ -202,7 +208,7 @@ export function FamilyTray({ family, onFold }: { family: Family; onFold: () => v
         ))}
         <button type="button" className="tray-slot-new" onClick={openBay}>
           <span className="plus">
-            <PlusIcon size={14} weight="bold" />
+            <PlusIcon size={14} />
           </span>
           <span className="lbl">
             Open

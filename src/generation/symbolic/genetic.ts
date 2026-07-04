@@ -4,7 +4,7 @@
  * mutations make small, always-in-scale edits to one keeper's melodic line.
  * All pitch moves happen in scale-degree space so children stay in-key.
  */
-import type { Mode, Motif, Note } from '../../types'
+import type { Mode, Motif, Note, Part } from '../../types'
 import { beatsPerBar, degreeToPitch, pitchToDegree } from '../../core/theory'
 import { EPS } from '../../core/validate'
 import { pick, pickWeighted, randInt, type Rng } from './prng'
@@ -32,11 +32,20 @@ const sortNotes = (notes: Note[]) =>
   notes.sort((a, b) => a.startBeat - b.startBeat || a.pitch - b.pitch)
 
 /**
+ * The structural slice of a Motif the genetic operators need — evolution
+ * individuals satisfy it without carrying full Motif records.
+ */
+export interface LineMaterial extends MutationContext {
+  parts: Part[]
+  notes: Note[]
+}
+
+/**
  * The keeper's primary melodic material as a partless line: the first
  * non-drum part when parts exist, all notes otherwise. GA children are
  * partless melodic bones (monophonic-first; polyphony passes through).
  */
-export function melodicLine(m: Motif): Note[] {
+export function melodicLine(m: LineMaterial): Note[] {
   let picked: Note[]
   if (m.parts.length === 0) {
     picked = m.notes
@@ -68,7 +77,7 @@ function fromIdx(idx: number, key: string, mode: Mode): number {
 }
 
 /** Re-spell a pitch from one key/mode into another, degree-for-degree. */
-function mapPitch(pitch: number, from: Motif, to: Motif): number {
+function mapPitch(pitch: number, from: LineMaterial, to: LineMaterial): number {
   const pos = pitchToDegree(pitch, from.key, from.mode)
   return clampPitch(
     degreeToPitch({ ...pos, chromaticOffset: 0 }, to.key, to.mode),
@@ -85,7 +94,7 @@ export interface CrossoverResult {
  * The child lives in `a`'s key/mode/length; `b`'s notes are re-spelled
  * degree-for-degree into it. Returns null when the splice is too thin.
  */
-export function crossover(a: Motif, b: Motif, rng: Rng): CrossoverResult | null {
+export function crossover(a: LineMaterial, b: LineMaterial, rng: Rng): CrossoverResult | null {
   if (a.bars < 2) return null
   const bpb = beatsPerBar(a.timeSig)
   const totalBeats = a.bars * bpb
@@ -138,10 +147,26 @@ const OP_WEIGHTS: readonly (readonly [MutationOp, number])[] = [
   ['retrograde-bar', 12],
 ]
 
-function applyOp(op: MutationOp, notes: Note[], parent: Motif, rng: Rng): Note[] {
-  const { key, mode } = parent
-  const bpb = beatsPerBar(parent.timeSig)
-  const totalBeats = parent.bars * bpb
+/** Drum takes only get ops with no scale-degree math — degree-space moves
+ * would remap GM percussion pitches onto the key's scale. */
+const DRUM_OP_WEIGHTS: readonly (readonly [MutationOp, number])[] = [
+  ['swap-adjacent', 18],
+  ['alter-rhythm-cell', 18],
+  ['retrograde-bar', 12],
+]
+
+/** The key/mode/length context mutation ops need — a Motif satisfies it. */
+export interface MutationContext {
+  key: string
+  mode: Mode
+  bars: number
+  timeSig: string
+}
+
+function applyOp(op: MutationOp, notes: Note[], ctx: MutationContext, rng: Rng): Note[] {
+  const { key, mode } = ctx
+  const bpb = beatsPerBar(ctx.timeSig)
+  const totalBeats = ctx.bars * bpb
   const out = notes.map((n) => ({ ...n }))
   switch (op) {
     case 'transpose-note': {
@@ -184,7 +209,7 @@ function applyOp(op: MutationOp, notes: Note[], parent: Motif, rng: Rng): Note[]
       break
     }
     case 'retrograde-bar': {
-      const bar = randInt(rng, 0, parent.bars - 1)
+      const bar = randInt(rng, 0, ctx.bars - 1)
       const barStart = bar * bpb
       const barEnd = barStart + bpb
       for (const n of out) {
@@ -198,15 +223,31 @@ function applyOp(op: MutationOp, notes: Note[], parent: Motif, rng: Rng): Note[]
   return sortNotes(out)
 }
 
-/** One (sometimes two) small in-scale edits to a keeper's melodic line. */
-export function mutateLine(parent: Motif, rng: Rng): MutationResult {
+/**
+ * One (sometimes two) small in-scale edits to an arbitrary note list — the
+ * shared core behind full-motif GA mutants and the bay's per-part MUTATE.
+ * `drums` restricts to rhythm-only ops (drum pitches aren't scale material).
+ */
+export function mutateNotes(
+  input: Note[],
+  ctx: MutationContext,
+  rng: Rng,
+  opts: { drums?: boolean } = {},
+): MutationResult {
+  if (input.length === 0) return { notes: [], ops: [] }
+  const weights = opts.drums ? DRUM_OP_WEIGHTS : OP_WEIGHTS
   const ops: string[] = []
-  let notes = melodicLine(parent)
+  let notes = sortNotes(input.map((n) => ({ ...n })))
   const rounds = rng() < 0.4 ? 2 : 1
   for (let r = 0; r < rounds; r++) {
-    const op = pickWeighted(rng, OP_WEIGHTS)
-    notes = applyOp(op, notes, parent, rng)
+    const op = pickWeighted(rng, weights)
+    notes = applyOp(op, notes, ctx, rng)
     ops.push(op)
   }
   return { notes, ops }
+}
+
+/** One (sometimes two) small in-scale edits to a keeper's melodic line. */
+export function mutateLine(parent: LineMaterial, rng: Rng): MutationResult {
+  return mutateNotes(melodicLine(parent), parent, rng)
 }

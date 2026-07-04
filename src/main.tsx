@@ -1,6 +1,8 @@
 import { StrictMode, useEffect, useMemo } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MantineProvider, mergeThemeOverrides } from '@mantine/core'
+import { Notifications } from '@mantine/notifications'
+import { IconContext } from '@phosphor-icons/react'
 import { App } from './App'
 import { AppProvider } from './store/AppContext'
 import { idbAdapter } from './store/idbAdapter'
@@ -8,6 +10,7 @@ import { theme } from './theme'
 import { useThemePref, useResolvedTheme, useTooltipsEnabled } from './uiPrefs'
 import { initNeural } from './generation/neural/client'
 import '@mantine/core/styles.css'
+import '@mantine/notifications/styles.css'
 import './styles.css'
 
 // Neural tier gate: unsupported / idle / auto-load when already cached.
@@ -41,9 +44,13 @@ function Root() {
   )
   return (
     <MantineProvider theme={merged} forceColorScheme={resolved === 'nite' ? 'dark' : 'light'}>
-      <AppProvider adapter={idbAdapter}>
-        <App />
-      </AppProvider>
+      <Notifications position="top-right" />
+      {/* Every Phosphor icon renders its filled variant; no per-icon weight props. */}
+      <IconContext.Provider value={{ weight: 'fill' }}>
+        <AppProvider adapter={idbAdapter}>
+          <App />
+        </AppProvider>
+      </IconContext.Provider>
     </MantineProvider>
   )
 }
