@@ -573,8 +573,9 @@ export function MutationBay({ source }: { source: Motif }) {
     return l
   }, [trees, showHidden, collapsedParts, pending, draggedPositions])
 
-  const onNodeDrag = (id: string, pos: { x: number; y: number }) =>
-    setDraggedPositions((prev) => ({ ...prev, [id]: pos }))
+  // Only the drop persists — while the drag is in flight React Flow moves the
+  // card via the canvas's local applyNodeChanges state, so no dagre relayout
+  // or graph rebuild runs per pointermove.
   const onNodeDragStop = (id: string, pos: { x: number; y: number }) => {
     // prune overrides for nodes that no longer exist (pruned takes, vanished
     // pending parents) so the stored map can't grow stale entries
@@ -743,7 +744,6 @@ export function MutationBay({ source }: { source: Motif }) {
             advOpen={advanced !== null}
             // pan/zoom moves the anchor under a fixed dropdown — close ADV
             onMoveStart={stableCallbacks.closeAdvanced}
-            onNodeDrag={onNodeDrag}
             onNodeDragStop={onNodeDragStop}
           />
         </BayFlowProvider>

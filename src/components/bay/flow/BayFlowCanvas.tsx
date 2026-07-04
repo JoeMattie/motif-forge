@@ -1,6 +1,7 @@
 import '@xyflow/react/dist/style.css'
-import { useEffect, useRef, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import {
+  applyNodeChanges,
   Background,
   BackgroundVariant,
   MiniMap,
@@ -10,6 +11,7 @@ import {
   useReactFlow,
   useStoreApi,
   type BuiltInEdge,
+  type NodeChange,
   type NodeTypes,
 } from '@xyflow/react'
 import type { NodeRect } from './layout'
@@ -45,10 +47,9 @@ interface CanvasProps {
   advOpen: boolean
   /** Pan/zoom start — the bay closes its ADV dropdown so it can't drift off its anchor. */
   onMoveStart: () => void
-  /** Card drag in flight — the bay mirrors the position into its override map
-   * so the controlled nodes prop follows the pointer. */
-  onNodeDrag: (id: string, pos: { x: number; y: number }) => void
-  /** Drag ended — the bay persists the override map to localStorage. */
+  /** Drag ended — the bay persists the position into its override map +
+   * localStorage. During the drag React Flow's own applyNodeChanges moves the
+   * card (canvas-local state), so no layout work runs per pointermove. */
   onNodeDragStop: (id: string, pos: { x: number; y: number }) => void
 }
 
@@ -70,11 +71,21 @@ function CanvasInner({
   focusSource,
   advOpen,
   onMoveStart,
-  onNodeDrag,
   onNodeDragStop,
 }: CanvasProps) {
   const flow = useReactFlow()
   const store = useStoreApi()
+
+  // React Flow's built-in drag: it emits position changes through
+  // onNodesChange, applied to this canvas-local copy — the derived `nodes`
+  // prop stays the source of truth and resyncs the copy whenever the facts
+  // (takes, focus, selection, persisted drag overrides) rebuild it.
+  const [liveNodes, setLiveNodes] = useState(nodes)
+  useEffect(() => setLiveNodes(nodes), [nodes])
+  const onNodesChange = useCallback(
+    (changes: NodeChange<BayFlowNode>[]) => setLiveNodes((ns) => applyNodeChanges(changes, ns)),
+    [],
+  )
 
   // Re-fit when a NEW take lands (mount is covered by the fitView prop), so
   // fresh mutations never land off-screen. Selection changes, focus moves,
@@ -120,9 +131,10 @@ function CanvasInner({
 
   return (
     <ReactFlow
-      nodes={nodes}
+      nodes={liveNodes}
       edges={edges}
       nodeTypes={nodeTypes}
+      onNodesChange={onNodesChange}
       // per-node flags decide draggability (cards yes, pending placeholders
       // no) and restrict the grab surface to each card's .bay-drag-handle
       nodesConnectable={false}
@@ -147,7 +159,6 @@ function CanvasInner({
       fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
       onNodeClick={keepNodesClickable}
       onMoveStart={onMoveStart}
-      onNodeDrag={(_, n) => onNodeDrag(n.id, n.position)}
       onNodeDragStop={(_, n) => onNodeDragStop(n.id, n.position)}
       // onlyRenderVisibleElements stays OFF: virtualization would unmount
       // open CLAUDE/ADV popovers mid-edit. It's the perf lever if trees grow.

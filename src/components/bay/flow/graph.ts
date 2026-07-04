@@ -107,8 +107,9 @@ function makeEdge(from: string, to: string, className?: string): BuiltInEdge {
     id: `e:${from}->${to}`,
     source: from,
     target: to,
-    type: 'smoothstep',
-    pathOptions: { borderRadius: 4 },
+    // built-in bezier — cables curve smoothly between cards like real patch
+    // leads instead of smoothstep's right-angle runs
+    type: 'default',
   }
   if (className) edge.className = className
   return edge
