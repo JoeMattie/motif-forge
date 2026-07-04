@@ -20,6 +20,13 @@ import { TakeNode } from './TakeNode'
 // v12 requires a stable nodeTypes reference — module scope, never inline.
 const nodeTypes: NodeTypes = { origin: OriginNode, take: TakeNode, pending: PendingNode }
 
+// React Flow stamps inline `pointer-events: none` on every node wrapper
+// unless the node is selectable/draggable or an onNodeClick handler exists
+// (NodeWrapper's hasPointerEvents). Ours are deliberately neither, and every
+// real interaction lives INSIDE the cards — register a no-op so the wrappers
+// stay clickable.
+const keepNodesClickable = () => {}
+
 /** Screen-space margin a keyboard-focused card keeps from the canvas edges. */
 const FOLLOW_PAD = 24
 
@@ -100,6 +107,7 @@ function CanvasInner({ nodes, edges, focusKey, focusRect, focusSource, onMoveSta
       maxZoom={1.5}
       fitView
       fitViewOptions={{ padding: 0.15, maxZoom: 1 }}
+      onNodeClick={keepNodesClickable}
       onMoveStart={onMoveStart}
       // onlyRenderVisibleElements stays OFF: virtualization would unmount
       // open CLAUDE/ADV popovers mid-edit. It's the perf lever if trees grow.
