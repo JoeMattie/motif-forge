@@ -5,9 +5,11 @@ import { mulberry32 } from '../src/generation/symbolic/prng'
 import {
   EVOLVE_DEFAULTS,
   type EvolveContext,
+  type EvolveTuning,
   evolvePopulation,
 } from '../src/generation/symbolic/evolve'
 import { similarity } from '../src/generation/symbolic/fitness'
+import { moodRange, moodTargets } from '../src/generation/symbolic/mood'
 import { generateSymbolicBatch } from '../src/generation/symbolic'
 import { makeMotif, makeNote } from './fixtures'
 
@@ -65,6 +67,42 @@ describe('evolvePopulation', () => {
         }
       }
     }
+  })
+
+  it('mood-tuned + progression runs still return n distinct valid survivors', () => {
+    const mood = { valence: -0.5, arousal: 1 }
+    const tuning: EvolveTuning = {
+      targets: moodTargets(mood),
+      range: moodRange(mood),
+      contourWeights: { descend: 3, arch: 1 },
+      rhythmWeights: { syncopated: 2, straight: 1 },
+    }
+    const tunedCtx: EvolveContext = { ...ctx, progression: [0, 5, 3, 4] }
+    const keepers = [denseKeeper(), denseKeeper({ id: 'k2', key: 'G' })]
+    for (let seed = 1; seed <= 3; seed++) {
+      const { picked } = evolvePopulation(tunedCtx, keepers, 6, mulberry32(seed), EVOLVE_DEFAULTS, tuning)
+      expect(picked).toHaveLength(6)
+      for (let i = 0; i < picked.length; i++) {
+        expect(picked[i].notes.length).toBeGreaterThanOrEqual(3)
+        for (const n of picked[i].notes) {
+          expect(isInScale(n.pitch, picked[i].ctx.key, picked[i].ctx.mode)).toBe(true)
+          expect(n.pitch).toBeGreaterThanOrEqual(36)
+          expect(n.pitch).toBeLessThanOrEqual(96)
+        }
+        for (let j = i + 1; j < picked.length; j++) {
+          expect(similarity(picked[i].notes, picked[j].notes)).toBeLessThanOrEqual(
+            EVOLVE_DEFAULTS.dedupThreshold,
+          )
+        }
+      }
+    }
+  })
+
+  it('an empty tuning reproduces the untuned run exactly', () => {
+    const a = evolvePopulation(ctx, [denseKeeper()], 5, mulberry32(21))
+    const b = evolvePopulation(ctx, [denseKeeper()], 5, mulberry32(21), EVOLVE_DEFAULTS, {})
+    expect(b.picked.map((i) => i.notes)).toEqual(a.picked.map((i) => i.notes))
+    expect(b.finalBest).toBe(a.finalBest)
   })
 
   it('keeper ancestry survives crossover and mutation generations', () => {
@@ -129,6 +167,64 @@ describe('generateSymbolicBatch with rhythm', () => {
     for (const m of result.valid) {
       expect(m.parts).toEqual([])
       expect(m.notes.every((n) => n.part === undefined)).toBe(true)
+    }
+  })
+})
+
+describe('generateSymbolicBatch with the chord scaffold (EXTRA)', () => {
+  it('lays lead+bass+pad(+kit), lead first, all by-construction valid', () => {
+    const result = generateSymbolicBatch(
+      brief({ extraInstruments: true, includeRhythm: true }),
+      5,
+      [],
+      47,
+    )
+    expect(result.valid).toHaveLength(5)
+    for (const m of result.valid) {
+      // Lead MUST stay part 0 (melodicLine/bay/crossover depend on it).
+      expect(m.parts.map((p) => p.name)).toEqual(['lead', 'bass', 'pad', 'kit'])
+      expect(m.parts.map((p) => p.instrument)).toEqual(['synth', 'synth', 'strings', 'drums'])
+      expect(m.parts.length).toBeLessThanOrEqual(6)
+      expect(m.parts[1].preset?.oscillator).toBe('triangle')
+      const s = m.source
+      if (s.kind !== 'symbolic' && s.kind !== 'ga') throw new Error('unexpected source kind')
+      const prog = s.spec?.progression
+      expect(prog).toHaveLength(m.bars)
+      const byPart = (i: number) => m.notes.filter((n) => (n.part ?? 0) === i)
+      expect(byPart(0).length).toBeGreaterThanOrEqual(3)
+      // Bass: chord tones in the bass register.
+      for (const n of byPart(1)) {
+        expect(n.pitch).toBeGreaterThanOrEqual(36)
+        expect(n.pitch).toBeLessThanOrEqual(55)
+      }
+      // Pad: 3 sustained voices per bar.
+      expect(byPart(2)).toHaveLength(m.bars * 3)
+      // Never more than 8 simultaneous melodic voices (drums excluded).
+      const melodic = m.notes.filter((n) => (n.part ?? 0) !== 3)
+      for (let t = 0; t < m.bars * 4; t += 0.25) {
+        const sounding = melodic.filter(
+          (n) => n.startBeat <= t + 1e-6 && n.startBeat + n.durationBeats > t + 1e-6,
+        )
+        expect(sounding.length).toBeLessThanOrEqual(8)
+      }
+    }
+  })
+
+  it('is deterministic and replayable from the stored spec', () => {
+    const b = brief({ extraInstruments: true })
+    const x = generateSymbolicBatch(b, 4, [], 88)
+    const y = generateSymbolicBatch(b, 4, [], 88)
+    expect(x.valid.map(essence)).toEqual(y.valid.map(essence))
+    const s = x.valid[0].source
+    if (s.kind !== 'symbolic' && s.kind !== 'ga') throw new Error('unexpected source kind')
+    const replay = generateSymbolicBatch(b, 4, [], 88, s.spec)
+    expect(replay.valid.map(essence)).toEqual(x.valid.map(essence))
+  })
+
+  it('without EXTRA there is no scaffold: rhythm-only stays lead+kit', () => {
+    const result = generateSymbolicBatch(brief({ includeRhythm: true }), 3, [], 12)
+    for (const m of result.valid) {
+      expect(m.parts.map((p) => p.name)).toEqual(['lead', 'kit'])
     }
   })
 })

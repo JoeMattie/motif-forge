@@ -33,6 +33,32 @@ export type Mode =
   | 'aeolian'
   | 'locrian'
 
+/**
+ * Steering spec for the INSTANT (Tier-1 symbolic) engine — persisted on the
+ * motifs it produces so any planned/mood-shifted batch replays offline from
+ * (seed, brief, keepers, spec) without re-calling the planner. String-keyed
+ * weight maps keep this file dependency-free; the symbolic tier whitelists
+ * the keys against its own CONTOURS/RHYTHMS tables.
+ */
+export interface InstantSpec {
+  /** Mood valence −1..1 (dark → bright); absent = neutral (0). */
+  valence?: number
+  /** Mood arousal 0..1 (calm → driven); absent = neutral (0.5). */
+  arousal?: number
+  /** Relative weights for the walk's contour templates (arch/ascend/…). */
+  contourWeights?: Partial<Record<string, number>>
+  /** Relative weights for the walk's rhythm archetypes (straight/dotted/…). */
+  rhythmWeights?: Partial<Record<string, number>>
+  /** Drum groove density override (else derived from mood/melody). */
+  density?: 'sparse' | 'medium' | 'busy'
+  /** Walk register shift relative to the default lead range. */
+  register?: 'low' | 'mid' | 'high'
+  /** Per-bar chord degrees 0–6 (in-mode triads), cycled across the phrase. */
+  progression?: number[]
+  /** Set when the Claude planner produced this spec from the brief text. */
+  plannedBy?: 'claude'
+}
+
 export type MotifSource =
   | { kind: 'seed' }
   | { kind: 'generated'; brief: string; batchId: string }
@@ -47,12 +73,12 @@ export type MotifSource =
    * recipe = "contour/rhythm" or "evolved #rank"; the batch seed (plus the
    * motif's own metadata and keepers, for evolved batches) reproduces it.
    * fitness = Gaussian multi-feature score at generation time. */
-  | { kind: 'symbolic'; batchId: string; seed: number; recipe: string; fitness?: number }
+  | { kind: 'symbolic'; batchId: string; seed: number; recipe: string; fitness?: number; spec?: InstantSpec }
   /** Tier-1 evolution survivor descended from user-kept motifs: parentIds are
    * its 0–4 distinct keeper ancestors accumulated through crossover/mutation
    * generations. Children start their own family (fresh triage candidates);
    * ancestry stays queryable via parentIds. */
-  | { kind: 'ga'; batchId: string; seed: number; op: string; parentIds: string[]; fitness?: number }
+  | { kind: 'ga'; batchId: string; seed: number; op: string; parentIds: string[]; fitness?: number; spec?: InstantSpec }
   /** Tier-2 offline generation: on-device neural model (SkyTNT midi-model).
    * parentId set when the candidate continued a keeper (neural variation);
    * like 'ga', children start their own family. fitness ranks the batch. */
@@ -107,8 +133,11 @@ export interface GenerationBrief {
   allowChromatic: boolean
   texture: Texture // lead melody with light harmony vs free polyphony
   includeRhythm: boolean // ask for a GM-pitch drums part
-  /** EXTRA toggle: demand a fuller arrangement — 4–6 parts with distinct roles. */
+  /** EXTRA toggle: demand a fuller arrangement — 4–6 parts with distinct roles
+   * (CLAUDE/NEURAL), or the seeded bass + pad chord scaffold (INSTANT). */
   extraInstruments: boolean
+  /** MOOD/ENERGY knobs: valence −1..1, arousal 0..1; absent = neutral. */
+  mood?: { valence: number; arousal: number }
 }
 
 export function parentIdOf(m: Motif): string | null {

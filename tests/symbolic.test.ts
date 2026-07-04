@@ -9,11 +9,13 @@ import {
   type WalkParams,
 } from '../src/generation/symbolic/walk'
 import {
+  applyOp,
   crossover,
   keepersOf,
   melodicLine,
   mutateLine,
   mutateNotes,
+  type MutationContext,
 } from '../src/generation/symbolic/genetic'
 import {
   generateSymbolicBatch,
@@ -164,35 +166,24 @@ describe('genetic operators', () => {
     }
   })
 
-  it('mutants keep the parent’s note count and most of its material', () => {
+  it('mutants stay valid: ≥3 notes, bounded growth, in-scale, in-bars, deterministic', () => {
     const parent = denseKeeper()
-    const shared = (xs: number[], ys: number[]) => {
-      const pool = [...ys]
-      let count = 0
-      for (const x of xs) {
-        const at = pool.indexOf(x)
-        if (at >= 0) {
-          pool.splice(at, 1)
-          count++
-        }
-      }
-      return count
-    }
+    const totalBeats = parent.bars * 4
     for (let seed = 1; seed <= 40; seed++) {
       const { notes, ops } = mutateLine(parent, mulberry32(seed))
       expect(ops.length).toBeGreaterThanOrEqual(1)
       expect(ops.length).toBeLessThanOrEqual(2)
-      expect(notes.length).toBe(parent.notes.length)
-      const n = parent.notes.length
-      // Each op perturbs one dimension; at least one dimension survives nearly intact.
-      const best = Math.max(
-        shared(notes.map((x) => x.pitch), parent.notes.map((x) => x.pitch)),
-        shared(notes.map((x) => x.startBeat), parent.notes.map((x) => x.startBeat)),
-        shared(notes.map((x) => x.durationBeats), parent.notes.map((x) => x.durationBeats)),
-      )
-      expect(best).toBeGreaterThanOrEqual(n - 1)
-      // In-scale parents beget in-scale children.
-      for (const note of notes) expect(isInScale(note.pitch, parent.key, parent.mode)).toBe(true)
+      // Note counts may drift (repeat-paste, note-rest-toggle) but stay bounded.
+      expect(notes.length).toBeGreaterThanOrEqual(3)
+      expect(notes.length).toBeLessThanOrEqual(parent.notes.length * 2)
+      for (const note of notes) {
+        // In-scale parents beget in-scale children, inside the parent's bars.
+        expect(isInScale(note.pitch, parent.key, parent.mode)).toBe(true)
+        expect(note.startBeat).toBeGreaterThanOrEqual(0)
+        expect(note.startBeat + note.durationBeats).toBeLessThanOrEqual(totalBeats + 1e-6)
+      }
+      // Seed-deterministic.
+      expect(mutateLine(parent, mulberry32(seed))).toEqual({ notes, ops })
     }
   })
 
@@ -206,16 +197,121 @@ describe('genetic operators', () => {
     expect(parent.notes).toEqual(denseKeeper().notes)
   })
 
-  it('drum mode never invents pitches — only reorders the existing kit', () => {
+  it('drum mode never invents pitches — the output kit is a subset of the input kit', () => {
     const ctx = { key: 'D', mode: 'dorian' as const, bars: 2, timeSig: '4/4' }
     const kit = [36, 38, 42, 46] // GM kick/snare/hats — deliberately out-of-scale material
     const notes: Note[] = []
     for (let b = 0; b < 8; b++) notes.push(makeNote({ pitch: kit[b % kit.length], startBeat: b }))
+    const DRUM_OPS = [
+      'swap-adjacent',
+      'alter-rhythm-cell',
+      'retrograde-bar',
+      'repeat-paste',
+      'note-rest-toggle',
+    ]
     for (let seed = 1; seed <= 40; seed++) {
       const { notes: out, ops } = mutateNotes(notes, ctx, mulberry32(seed), { drums: true })
-      expect(ops.every((op) => ['swap-adjacent', 'alter-rhythm-cell', 'retrograde-bar'].includes(op))).toBe(true)
-      const sorted = (xs: number[]) => [...xs].sort((x, y) => x - y)
-      expect(sorted(out.map((n) => n.pitch))).toEqual(sorted(notes.map((n) => n.pitch)))
+      // No sort-run (sorting GM percussion is meaningless) and no degree math.
+      expect(ops.every((op) => DRUM_OPS.includes(op))).toBe(true)
+      const inputPitches = new Set(notes.map((n) => n.pitch))
+      for (const n of out) expect(inputPitches.has(n.pitch)).toBe(true)
+      expect(out.length).toBeGreaterThanOrEqual(3)
+    }
+  })
+})
+
+describe('new mutation ops', () => {
+  const ctx: MutationContext = { key: 'D', mode: 'dorian', bars: 4, timeSig: '4/4' }
+  const line = () => denseKeeper().notes.map((n) => ({ ...n }))
+  const onsets = (ns: Note[]) => ns.map((n) => [n.startBeat, n.durationBeats])
+  const multiset = (xs: number[]) => [...xs].sort((a, b) => a - b)
+
+  it('sort-run permutes pitches of one slice monotonically, timings untouched', () => {
+    const input = line()
+    let sawSorted = 0
+    for (let seed = 1; seed <= 30; seed++) {
+      const out = applyOp('sort-run', input, ctx, mulberry32(seed))
+      // Pure permutation: same onsets/durations, same pitch multiset.
+      expect(onsets(out)).toEqual(onsets(input))
+      expect(multiset(out.map((n) => n.pitch))).toEqual(multiset(input.map((n) => n.pitch)))
+      // Some contiguous slice of 3+ notes is monotone (asc or desc).
+      const pitches = out.map((n) => n.pitch)
+      for (let start = 0; start + 3 <= pitches.length; start++) {
+        for (let len = 3; len <= Math.min(6, pitches.length - start); len++) {
+          const slice = pitches.slice(start, start + len)
+          const asc = slice.every((p, i) => i === 0 || slice[i - 1] <= p)
+          const desc = slice.every((p, i) => i === 0 || slice[i - 1] >= p)
+          if (asc || desc) sawSorted++
+        }
+      }
+      // Deterministic per seed.
+      expect(applyOp('sort-run', input, ctx, mulberry32(seed))).toEqual(out)
+    }
+    expect(sawSorted).toBeGreaterThan(0)
+    // No-op under 3 notes.
+    const tiny = input.slice(0, 2)
+    expect(applyOp('sort-run', tiny, ctx, mulberry32(1))).toEqual(tiny)
+  })
+
+  it('repeat-paste replaces one bar with another bar’s material, shifted intact', () => {
+    // Distinct pitch per bar so source/destination are unambiguous.
+    const input: Note[] = []
+    const barPitch = [62, 64, 65, 67]
+    for (let b = 0; b < 16; b++) {
+      input.push(makeNote({ pitch: barPitch[Math.floor(b / 4)], startBeat: b }))
+    }
+    for (let seed = 1; seed <= 30; seed++) {
+      const out = applyOp('repeat-paste', input, ctx, mulberry32(seed))
+      expect(out.length).toBe(input.length) // equal-density bars: replace, not overlay
+      for (const n of out) {
+        expect(n.startBeat).toBeGreaterThanOrEqual(0)
+        expect(n.startBeat + n.durationBeats).toBeLessThanOrEqual(16 + 1e-6)
+      }
+      // Exactly one bar changed, and it now duplicates another bar exactly.
+      const barsOf = (ns: Note[]) =>
+        [0, 1, 2, 3].map((bar) =>
+          ns
+            .filter((n) => n.startBeat >= bar * 4 && n.startBeat < (bar + 1) * 4)
+            .map((n) => [n.startBeat - bar * 4, n.durationBeats, n.pitch]),
+        )
+      const before = barsOf(input)
+      const after = barsOf(out)
+      const changed = [0, 1, 2, 3].filter(
+        (b) => JSON.stringify(before[b]) !== JSON.stringify(after[b]),
+      )
+      expect(changed.length).toBe(1)
+      const dst = changed[0]
+      expect(before.some((src, b) => b !== dst && JSON.stringify(src) === JSON.stringify(after[dst]))).toBe(
+        true,
+      )
+    }
+    // Needs ≥2 bars.
+    const oneBar = input.slice(0, 4)
+    expect(applyOp('repeat-paste', oneBar, { ...ctx, bars: 1 }, mulberry32(1))).toEqual(oneBar)
+  })
+
+  it('note-rest-toggle keeps ≥3 notes and never adds simultaneity', () => {
+    const voicesAt = (ns: Note[], t: number) =>
+      ns.filter((n) => n.startBeat <= t + 1e-6 && n.startBeat + n.durationBeats > t + 1e-6).length
+    const input = line()
+    for (let seed = 1; seed <= 30; seed++) {
+      const out = applyOp('note-rest-toggle', input, ctx, mulberry32(seed))
+      expect(out.length).toBeGreaterThanOrEqual(3)
+      expect(Math.abs(out.length - input.length)).toBe(1) // one deletion or one split
+      // Sampled voice count never exceeds the input's.
+      for (let t = 0; t < 16; t += 0.25) {
+        expect(voicesAt(out, t)).toBeLessThanOrEqual(voicesAt(input, t))
+      }
+      expect(applyOp('note-rest-toggle', input, ctx, mulberry32(seed))).toEqual(out)
+    }
+    // At the 3-note floor with nothing splittable, it is a no-op.
+    const floor = [
+      makeNote({ pitch: 62, startBeat: 0, durationBeats: 0.25 }),
+      makeNote({ pitch: 64, startBeat: 1, durationBeats: 0.25 }),
+      makeNote({ pitch: 65, startBeat: 2, durationBeats: 0.25 }),
+    ]
+    for (let seed = 1; seed <= 10; seed++) {
+      expect(applyOp('note-rest-toggle', floor, ctx, mulberry32(seed))).toEqual(floor)
     }
   })
 })

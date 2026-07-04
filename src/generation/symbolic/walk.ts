@@ -27,7 +27,7 @@ export interface WalkParams {
 }
 
 /** F3–D6: a comfortable lead register inside the app's hard 36–96 limits. */
-const DEFAULT_RANGE = { min: 53, max: 86 }
+export const DEFAULT_RANGE = { min: 53, max: 86 }
 
 const GRID = 0.25 // beats per 16th
 

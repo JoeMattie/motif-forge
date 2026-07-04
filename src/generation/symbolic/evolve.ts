@@ -7,8 +7,14 @@
  * which candidates are worth their ears. Deterministic given one Rng stream.
  */
 import type { Mode, Motif, Note } from '../../types'
-import { pick, randInt, type Rng } from './prng'
-import { CONTOURS, randomWalkNotes, RHYTHMS } from './walk'
+import { pick, pickWeighted, randInt, type Rng } from './prng'
+import {
+  type Contour,
+  CONTOURS,
+  randomWalkNotes,
+  type RhythmArchetype,
+  RHYTHMS,
+} from './walk'
 import {
   crossover,
   GA_DIVERSITY_FLOOR,
@@ -17,7 +23,7 @@ import {
   melodicLine,
   mutateNotes,
 } from './genetic'
-import { fitnessScore, similarity } from './fitness'
+import { DEFAULT_TARGETS, fitnessScore, similarity, type TargetTable } from './fitness'
 
 export interface EvolveOptions {
   population: number
@@ -50,6 +56,21 @@ export interface EvolveContext {
   bars: number
   timeSig: string
   tempo: number
+  /** Per-bar chord degrees; structurally satisfies FitnessContext, so the
+   * chord-anchoring feature scores every individual when present. */
+  progression?: readonly number[]
+}
+
+/**
+ * Mood/plan steering for a run: shifted fitness targets, a shifted walk
+ * register, and contour/rhythm template weights for fresh walks. Everything
+ * optional; an empty tuning is bit-identical to the untuned engine.
+ */
+export interface EvolveTuning {
+  targets?: TargetTable
+  range?: { min: number; max: number }
+  contourWeights?: Partial<Record<string, number>>
+  rhythmWeights?: Partial<Record<string, number>>
 }
 
 export interface Individual {
@@ -115,18 +136,34 @@ export function evolvePopulation(
   n: number,
   rng: Rng,
   opts: EvolveOptions = EVOLVE_DEFAULTS,
+  tuning: EvolveTuning = {},
 ): EvolveResult {
+  const targets = tuning.targets ?? DEFAULT_TARGETS
   const make = (notes: Note[], indCtx: EvolveContext, keeperIds: ReadonlySet<string>): Individual => ({
     notes,
     ctx: indCtx,
-    fitness: fitnessScore(notes, indCtx),
+    fitness: fitnessScore(notes, indCtx, targets),
     keeperIds,
   })
 
+  // Weighted template picks when a tuning steers them; plain uniform picks
+  // otherwise (identical rng consumption either way).
+  const pickTemplate = <T extends string>(
+    list: readonly T[],
+    weights: Partial<Record<string, number>> | undefined,
+  ): T =>
+    weights
+      ? pickWeighted(rng, list.map((t) => [t, weights[t] ?? 0] as const))
+      : pick(rng, list)
+
   const fresh = (): Individual => {
-    const contour = pick(rng, CONTOURS)
-    const rhythm = pick(rng, RHYTHMS)
-    return make(randomWalkNotes({ ...ctx, contour, rhythm }, rng), ctx, NO_KEEPERS)
+    const contour: Contour = pickTemplate(CONTOURS, tuning.contourWeights)
+    const rhythm: RhythmArchetype = pickTemplate(RHYTHMS, tuning.rhythmWeights)
+    return make(
+      randomWalkNotes({ ...ctx, contour, rhythm, range: tuning.range }, rng),
+      ctx,
+      NO_KEEPERS,
+    )
   }
 
   const keeperCtx = (k: Motif): EvolveContext => ({
@@ -135,6 +172,9 @@ export function evolvePopulation(
     bars: k.bars,
     timeSig: k.timeSig,
     tempo: k.tempo,
+    // Keeper-descended individuals score against the batch progression too
+    // (degrees are key-agnostic), so the whole population competes fairly.
+    progression: ctx.progression,
   })
 
   const mutant = (ind: Individual): Individual =>

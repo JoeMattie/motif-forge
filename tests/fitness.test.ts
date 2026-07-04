@@ -54,6 +54,27 @@ describe('feature extraction', () => {
     expect(extractFeatures(jumble, ctx).repetitionScore).toBe(0)
   })
 
+  it('chordToneRatio measures strong-beat chord anchoring, null without a progression', () => {
+    // C ionian, I–V per bar. Strong beats in 2 bars of 4/4: 0, 2, 4, 6.
+    const prog = [0, 4]
+    const notes = [
+      makeNote({ pitch: 60, startBeat: 0 }), // C on I — chord tone
+      makeNote({ pitch: 62, startBeat: 2 }), // D on I — not a chord tone
+      makeNote({ pitch: 67, startBeat: 4 }), // G on V — chord tone
+      makeNote({ pitch: 62, startBeat: 6 }), // D on V — chord tone (G-B-D)
+      makeNote({ pitch: 65, startBeat: 7 }), // weak beat: ignored
+    ]
+    expect(extractFeatures(notes, { ...ctx, progression: prog }).chordToneRatio).toBe(3 / 4)
+    expect(extractFeatures(notes, ctx).chordToneRatio).toBeNull()
+    // No strong-beat onsets at all: unmeasurable, not zero.
+    const weak = [
+      makeNote({ pitch: 60, startBeat: 0.5 }),
+      makeNote({ pitch: 62, startBeat: 1.5 }),
+      makeNote({ pitch: 64, startBeat: 3.5, durationBeats: 0.5 }),
+    ]
+    expect(extractFeatures(weak, { ...ctx, progression: prog }).chordToneRatio).toBeNull()
+  })
+
   it('flags off-beat onsets, rests, and out-of-scale pitches', () => {
     const notes = [
       makeNote({ pitch: 60, startBeat: 0, durationBeats: 0.5 }),
@@ -92,6 +113,33 @@ describe('fitnessScore', () => {
       if (k !== 'pitchRange') targets[k] = { ...targets[k], w: 0 }
     }
     expect(fitnessScore(stepwiseLine(), ctx, targets)).toBeCloseTo(1, 10)
+  })
+
+  it('scores without a progression exactly as before chordToneRatio existed (regression)', () => {
+    // Reconstruct the pre-chordToneRatio table and score manually: the null
+    // feature must be skipped along with its weight.
+    const notes = stepwiseLine()
+    const features = extractFeatures(notes, ctx)
+    let sum = 0
+    let weight = 0
+    for (const k of Object.keys(DEFAULT_TARGETS) as (keyof TargetTable)[]) {
+      if (k === 'chordToneRatio') continue
+      const r = features[k]
+      if (r === null) throw new Error(`unexpected null feature ${k}`)
+      const { mu, sigma, w } = DEFAULT_TARGETS[k]
+      sum += w * Math.exp(-((r - mu) ** 2) / (2 * sigma * sigma))
+      weight += w
+    }
+    expect(fitnessScore(notes, ctx)).toBeCloseTo(sum / weight, 12)
+  })
+
+  it('with a progression, chord-anchored lines outscore clashing ones', () => {
+    const prog = [0, 0] // stay on the tonic triad
+    const anchored = stepwiseLine() // starts and ends on C
+    const withProg = { ...ctx, progression: prog }
+    const fAnchored = extractFeatures(anchored, withProg).chordToneRatio
+    expect(fAnchored).not.toBeNull()
+    expect(fitnessScore(anchored, withProg)).not.toBe(fitnessScore(anchored, ctx))
   })
 
   it('prefers a musical line over a monotone and over random wide leaps', () => {

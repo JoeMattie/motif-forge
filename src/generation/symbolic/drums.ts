@@ -21,6 +21,9 @@ export interface DrumParams {
   fill?: boolean
   /** Crash on the very first downbeat (default on). */
   crash?: boolean
+  /** Mood arousal 0..1 shaping hats, ghosts, velocities, and fill length.
+   * Default 0.5 leaves output byte-identical to the energy-less generator. */
+  energy?: number
 }
 
 // GM drum map (all ≥ 35, validation's drum floor).
@@ -111,6 +114,11 @@ export function drumNotes(params: DrumParams, rng: Rng): Note[] {
   const { bars, timeSig, density } = params
   const fill = (params.fill ?? true) && bars >= 2
   const crash = params.crash ?? true
+  const energy = params.energy ?? 0.5
+  // Energy shapers — all exactly 1×/+0 at the neutral 0.5.
+  const openScale = 0.6 + 0.8 * energy
+  const ghostScale = 0.5 + energy
+  const velShift = Math.round((energy - 0.5) * 14)
   const bpb = beatsPerBar(timeSig)
   const denom = parseInt(timeSig.split('/')[1] ?? '4', 10)
   const stepBeats = denom === 8 ? 1 : 0.5
@@ -120,8 +128,8 @@ export function drumNotes(params: DrumParams, rng: Rng): Note[] {
   // Pulse for hats: quarters in /4 bars, dotted-quarter groups in /8.
   const pulseSteps = denom === 8 ? 3 : 2
   const grid16 = stepBeats / 2
-  // The fill owns the tail of the last bar: 2 steps (4 when busy).
-  const fillSteps = density === 'busy' ? 4 : 2
+  // The fill owns the tail of the last bar: 2 steps (4 when busy or driven).
+  const fillSteps = density === 'busy' || energy > 0.75 ? 4 : 2
   const fillStart = fill ? totalBeats - Math.min(fillSteps, stepsPerBar) * stepBeats : Infinity
 
   const notes: Note[] = []
@@ -133,7 +141,7 @@ export function drumNotes(params: DrumParams, rng: Rng): Note[] {
       velocity,
     })
 
-  if (crash) hit(CRASH, 0, vel(rng, 105, 4))
+  if (crash) hit(CRASH, 0, vel(rng, 105 + velShift, 4))
 
   for (let bar = 0; bar < bars; bar++) {
     for (let step = 0; step < stepsPerBar; step++) {
@@ -142,26 +150,29 @@ export function drumNotes(params: DrumParams, rng: Rng): Note[] {
       const onPulse = step % pulseSteps === 0
       const lastStep = step === stepsPerBar - 1
 
-      if (rng() < table.kick[step]) hit(KICK, beat, vel(rng, 100, 6))
+      if (rng() < table.kick[step]) hit(KICK, beat, vel(rng, 100 + velShift, 6))
       const backbeat = rng() < table.snare[step]
-      if (backbeat) hit(SNARE, beat, vel(rng, 106, 6))
+      if (backbeat) hit(SNARE, beat, vel(rng, 106 + velShift, 6))
       // Ghost snares add hand feel off the main hits (never on the downbeat).
-      else if (step > 0 && density !== 'sparse' && rng() < 0.06) hit(SNARE, beat, vel(rng, 42, 8))
+      else if (step > 0 && density !== 'sparse' && rng() < 0.06 * ghostScale) {
+        hit(SNARE, beat, vel(rng, 42 + velShift, 8))
+      }
 
       // Hi-hats: density picks the lattice; bar ends breathe with an open hat.
       const wantHat = density === 'sparse' ? onPulse : true
       if (wantHat) {
         const open =
-          (lastStep && rng() < 0.35) || (density === 'busy' && !onPulse && rng() < 0.3)
+          (lastStep && rng() < 0.35 * openScale) ||
+          (density === 'busy' && !onPulse && rng() < 0.3 * openScale)
         hit(
           open ? OPEN_HAT : CLOSED_HAT,
           beat,
-          vel(rng, open ? 84 : onPulse ? 84 : 72, 8),
+          vel(rng, (open ? 84 : onPulse ? 84 : 72) + velShift, 8),
         )
       }
       // Busy grooves sprinkle 16th ghost pickups between steps.
       if (density === 'busy' && rng() < 0.22 && beat + grid16 < fillStart) {
-        hit(CLOSED_HAT, beat + grid16, vel(rng, 48, 8))
+        hit(CLOSED_HAT, beat + grid16, vel(rng, 48 + velShift, 8))
       }
     }
   }
@@ -178,7 +189,7 @@ export function drumNotes(params: DrumParams, rng: Rng): Note[] {
     for (let i = 0; i < ordered.length; i++) {
       const last = i === ordered.length - 1
       if (last) drum = rng() < 0.5 ? TOM_LO : SNARE
-      hit(drum, slots[ordered[i]], vel(rng, 96, 10))
+      hit(drum, slots[ordered[i]], vel(rng, 96 + velShift, 10))
       if (!last) drum = pickWeighted(rng, FILL_STEPS[drum])
     }
   }

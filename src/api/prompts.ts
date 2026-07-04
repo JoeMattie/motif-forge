@@ -132,4 +132,38 @@ RHYTHM LOCK (overrides everything else): every child must reproduce the parent's
 ${hardRules({ key: parent.key, mode: parent.mode, bars: parent.bars, timeSig: parent.timeSig, allowChromatic: true }, 'poly')}`
 }
 
+const PLAN_SCHEMA_BLOCK = `{"valence":0.2,"arousal":0.7,"contourWeights":{"arch":3,"descend":1},"rhythmWeights":{"syncopated":2,"straight":1},"density":"medium","register":"mid","chromaticism":false,"progression":[0,5,3,4]}`
+
+/**
+ * Planner prompt (M6(GPT)3-style "LLM as planner"): the model translates the
+ * author's free-text brief into a compact steering spec for the offline
+ * INSTANT engine — it never writes a single note. When the MOOD/ENERGY knobs
+ * are off-center they are FIXED: the model must omit valence/arousal.
+ */
+export function buildPlanPrompt(brief: GenerationBrief): string {
+  const moodFixed =
+    brief.mood !== undefined && (brief.mood.valence !== 0 || brief.mood.arousal !== 0.5)
+  return `You are a music director translating an author's brief into parameters for an offline melody generator. You do NOT write notes — you only pick steering values.
+
+BRIEF:
+- Concept: ${brief.concept || '(unnamed)'}
+- Key/mode: ${brief.key} ${brief.mode} (fixed — do not output key or mode)
+- Tempo: ${brief.tempo} BPM (fixed)
+- Length: ${brief.bars} bars of ${brief.timeSig} (fixed)
+- Direction from the author: ${brief.text || '(none)'}
+
+PARAMETERS (all optional — omit any the brief gives you no signal for):
+- "valence": number -1..1 — emotional brightness (-1 dark, 1 bright).
+- "arousal": number 0..1 — energy (0 calm, 1 driven).${moodFixed ? `\n  NOTE: the author has FIXED valence/arousal on physical knobs — do NOT output "valence" or "arousal"; they would be ignored.` : ''}
+- "contourWeights": object — relative weights over melodic contour templates. Legal keys, exactly: "arch", "ascend", "descend", "zigzag", "flat". Positive numbers; higher = more likely.
+- "rhythmWeights": object — relative weights over rhythm archetypes. Legal keys, exactly: "straight", "dotted", "syncopated", "sparse".
+- "density": drum groove density, one of "sparse" | "medium" | "busy".
+- "register": melodic register, one of "low" | "mid" | "high".
+- "chromaticism": boolean — whether out-of-scale color is wanted.
+- "progression": array of scale-degree integers 0-6 (0 = tonic), one chord per bar, cycled if shorter than ${brief.bars}. Chord quality comes from the mode — just pick degrees, e.g. [0,5,3,4].
+
+OUTPUT: raw MINIFIED JSON only, one object exactly in the shape of this example — no prose, no markdown fences. Your first character must be "{".
+${PLAN_SCHEMA_BLOCK}`
+}
+
 export const ALL_MODES = MODES
