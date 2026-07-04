@@ -4,6 +4,7 @@ import { engine } from './audio/engine'
 import { useAppDispatch, useAppState } from './store/AppContext'
 import { SAMPLE_MOTIFS } from './core/sampleMotifs'
 import { GenerationPanel } from './components/GenerationPanel'
+import { NoodlePanel } from './components/NoodlePanel'
 import { Header } from './components/Header'
 import { TransportStrip } from './components/TransportStrip'
 import { TriageGrid } from './components/TriageGrid'
@@ -56,6 +57,7 @@ export function App() {
               of the .view scroller, which its sticky dock depends on. */}
           <div style={{ display: state.view === 'triage' ? 'contents' : 'none' }}>
             <GenerationPanel />
+            <NoodlePanel />
           </div>
           {state.view === 'triage' ? (
             state.triageMode === 'grid' ? (

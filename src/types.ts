@@ -61,6 +61,14 @@ export type MotifSource =
    * plus seeded in-key pitch assignment. preset is the resolved concrete name
    * (never 'any'); seed reproduces the exact riff. Always a fresh family root. */
   | { kind: 'genetic'; batchId: string; seed: number; preset: string; fitness: number }
+  /** Joe's own material from the Noodle panel: recorded via Web MIDI or
+   * musical typing, transcribed from the mic (method says how), or penciled
+   * straight into the roll. Always a fresh family root. */
+  | {
+      kind: 'recorded'
+      input: 'midi' | 'keys' | 'mic' | 'pencil'
+      method?: 'voice' | 'beats' | 'basic-pitch'
+    }
 
 export type Rating = 0 | 1 | 2 | 3 | 4 | 5
 

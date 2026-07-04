@@ -95,6 +95,17 @@ class AudioEngine {
     return { inst: entry.inst, transient: false, gain: entry.gain }
   }
 
+  /**
+   * Shared audio graph for non-playback consumers (noodle monitoring, click,
+   * mic capture): the live AudioContext, its Tone wrapper, and the master
+   * input. Creating a second AudioContext would drift clocks — everything
+   * must schedule against this one.
+   */
+  acquire(): { ctx: AudioContext; toneCtx: Tone.Context; masterInput: GainNode } {
+    const ctx = this.ensureCtx()
+    return { ctx, toneCtx: this.toneCtx!, masterInput: this.masterInput! }
+  }
+
   play(motif: Motif, opts: PlayOptions): void {
     const ctx = this.ensureCtx()
     this.stopInternal()

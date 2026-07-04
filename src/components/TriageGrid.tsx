@@ -6,6 +6,7 @@ import { buildFamilies, rootIdOf } from '../core/families'
 import { useAppDispatch, useAppState, useAppStateGetter } from '../store/AppContext'
 import { useGridColumns } from './hooks/useGridColumns'
 import { useKeyboardTriage } from './hooks/useKeyboardTriage'
+import { useNoodleCaptureActive } from './hooks/useNoodleCaptureActive'
 import { MotifCard } from './MotifCard'
 import { FamilyTray } from './FamilyTray'
 
@@ -107,7 +108,8 @@ export function TriageGrid() {
     [families, state.expandedFamilyId],
   )
 
-  useKeyboardTriage(faces, columns, state.mutationTargetId === null, {
+  const noodleCapture = useNoodleCaptureActive()
+  useKeyboardTriage(faces, columns, state.mutationTargetId === null && !noodleCapture, {
     onFold: toggleFold,
     onMutate: openBay,
     onPromote: promote,

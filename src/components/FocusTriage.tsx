@@ -20,6 +20,7 @@ import { useAppDispatch, useAppState } from '../store/AppContext'
 import { useIsLoading, useIsPlaying } from './hooks/usePlayhead'
 import { usePlayOptions } from './hooks/usePlayOptions'
 import { useKeyboardTriage } from './hooks/useKeyboardTriage'
+import { useNoodleCaptureActive } from './hooks/useNoodleCaptureActive'
 import { LcdRoll } from './LcdRoll'
 import { PlayRound } from './hw/PlayRound'
 
@@ -45,7 +46,8 @@ export function FocusTriage() {
     }
   }, [index, faces, active, dispatch])
 
-  useKeyboardTriage(faces, 1, state.mutationTargetId === null, {
+  const noodleCapture = useNoodleCaptureActive()
+  useKeyboardTriage(faces, 1, state.mutationTargetId === null && !noodleCapture, {
     onMutate: (m) => dispatch({ type: 'SET_MUTATION_TARGET', id: m.id }),
   })
 
