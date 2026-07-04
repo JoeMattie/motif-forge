@@ -14,6 +14,10 @@ async function expectNoHorizontalOverflow(page: Page, where: string): Promise<vo
     const vw = document.documentElement.clientWidth
     const offenders: string[] = []
     for (const el of document.querySelectorAll('body *')) {
+      // The bay's pan/zoom canvas transform layer extends past the window by
+      // design — its content is reached by panning. The .react-flow root
+      // around it still has to fit.
+      if (el.closest('.react-flow__viewport')) continue
       const r = el.getBoundingClientRect()
       if (r.width === 0 || r.height === 0) continue
       if (r.right > vw + 1 || r.left < -1) {
