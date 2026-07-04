@@ -75,6 +75,8 @@ function lineageLabel(m: Motif): string {
       return 'NEURAL'
     case 'genetic':
       return 'RIFF'
+    case 'recorded':
+      return m.source.input === 'mic' ? 'MIC' : m.source.input === 'pencil' ? 'PENCIL' : 'PLAYED'
   }
 }
 
