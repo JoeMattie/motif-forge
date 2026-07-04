@@ -21,6 +21,7 @@ const brief = (partial: Partial<GenerationBrief> = {}): GenerationBrief => ({
   text: '',
   allowChromatic: false,
   texture: 'lead',
+  voicing: 'line',
   includeRhythm: false,
   extraInstruments: false,
   ...partial,
@@ -130,5 +131,115 @@ describe('generateSymbolicBatch with rhythm', () => {
       expect(m.parts).toEqual([])
       expect(m.notes.every((n) => n.part === undefined)).toBe(true)
     }
+  })
+})
+
+/** Peak simultaneous voices, the same sweep-line validateBatch runs. */
+function maxSimultaneousVoices(notes: Note[]): number {
+  const edges = notes
+    .flatMap((n) => [
+      { t: n.startBeat, d: 1 },
+      { t: n.startBeat + n.durationBeats, d: -1 },
+    ])
+    .sort((a, b) => a.t - b.t || a.d - b.d) // note-off before note-on at equal times
+  let voices = 0
+  let peak = 0
+  for (const e of edges) {
+    voices += e.d
+    peak = Math.max(peak, voices)
+  }
+  return peak
+}
+
+/** Distinct pitches per chord onset. */
+function onsetSizes(notes: Note[]): number[] {
+  const byOnset = new Map<number, Set<number>>()
+  for (const n of notes) {
+    const s = byOnset.get(n.startBeat) ?? new Set<number>()
+    s.add(n.pitch)
+    byOnset.set(n.startBeat, s)
+  }
+  return [...byOnset.values()].map((s) => s.size)
+}
+
+describe('generateSymbolicBatch voicing', () => {
+  it("'both' layers a chords part under a seed-identical lead line", () => {
+    const keepers = [denseKeeper({ id: 'k1' })]
+    const line = generateSymbolicBatch(brief(), 5, keepers, 99)
+    const both = generateSymbolicBatch(brief({ voicing: 'both' }), 5, keepers, 99)
+    expect(both.valid).toHaveLength(5)
+    both.valid.forEach((m, i) => {
+      expect(m.parts.map((p) => p.name)).toEqual(['lead', 'chords'])
+      // Seed compat: the lead is bit-identical whichever way the switch sits
+      // (chords draw from their own childSeed stream).
+      const lead = m.notes.filter((n) => n.part === 0).map(({ part: _p, ...n }) => ({ ...n }))
+      expect(lead).toEqual(line.valid[i].notes)
+      const chords = m.notes.filter((n) => n.part === 1)
+      expect(chords.length).toBeGreaterThanOrEqual(3)
+      for (const n of chords) expect(isInScale(n.pitch, m.key, m.mode)).toBe(true)
+      const s = m.source
+      expect(s.kind === 'symbolic' || s.kind === 'ga').toBe(true)
+      if (s.kind === 'symbolic' || s.kind === 'ga') expect(s.voicing).toBe('both')
+      expect(m.rationale).toMatch(/[IViv]/)
+    })
+  })
+
+  it("'both' + rhythm stays at or under the 8-voice cap via triads-only chords", () => {
+    const b = brief({ voicing: 'both', includeRhythm: true })
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const result = generateSymbolicBatch(b, 5, [denseKeeper()], seed)
+      for (const m of result.valid) {
+        expect(m.parts.map((p) => p.name)).toEqual(['lead', 'chords', 'kit'])
+        expect(m.parts.map((p) => p.instrument)).toEqual(['synth', 'synth', 'drums'])
+        expect(maxSimultaneousVoices(m.notes)).toBeLessThanOrEqual(8)
+        // The voice-cap rule: melody + drums present, so triads only.
+        const chords = m.notes.filter((n) => n.part === 1)
+        for (const size of onsetSizes(chords)) expect(size).toBeLessThanOrEqual(3)
+      }
+    }
+  })
+
+  it("'chords' emits a single chords part of stacked in-scale triads/7ths, no GA fitness", () => {
+    const result = generateSymbolicBatch(brief({ voicing: 'chords' }), 5, [], 42)
+    expect(result.valid).toHaveLength(5)
+    for (const m of result.valid) {
+      expect(m.parts).toEqual([{ name: 'chords', instrument: 'synth' }])
+      expect(m.name).toMatch(/^Prog /)
+      expect(m.source).toMatchObject({ kind: 'symbolic', voicing: 'chords' })
+      if (m.source.kind === 'symbolic') expect(m.source.fitness).toBeUndefined()
+      for (const n of m.notes) expect(isInScale(n.pitch, m.key, m.mode)).toBe(true)
+      for (const size of onsetSizes(m.notes)) {
+        expect(size).toBeGreaterThanOrEqual(3)
+        expect(size).toBeLessThanOrEqual(4)
+      }
+      expect(maxSimultaneousVoices(m.notes)).toBeLessThanOrEqual(8)
+    }
+  })
+
+  it("'chords' + rhythm adds a kit and still clears the 8-voice cap (7ths allowed)", () => {
+    for (const seed of [7, 8, 9]) {
+      const result = generateSymbolicBatch(
+        brief({ voicing: 'chords', includeRhythm: true }),
+        5,
+        [],
+        seed,
+      )
+      for (const m of result.valid) {
+        expect(m.parts.map((p) => p.instrument)).toEqual(['synth', 'drums'])
+        const kit = m.notes.filter((n) => n.part === 1)
+        expect(kit.length).toBeGreaterThanOrEqual(3)
+        for (const n of kit) expect(n.pitch).toBeGreaterThanOrEqual(35)
+        expect(maxSimultaneousVoices(m.notes)).toBeLessThanOrEqual(8)
+      }
+    }
+  })
+
+  it("'chords' batches are deterministic given (seed, brief)", () => {
+    const b = brief({ voicing: 'chords', includeRhythm: true })
+    const x = generateSymbolicBatch(b, 5, [], 99)
+    const y = generateSymbolicBatch(b, 5, [], 99)
+    const z = generateSymbolicBatch(b, 5, [], 100)
+    expect(x.valid.map(essence)).toEqual(y.valid.map(essence))
+    expect(JSON.stringify(x.valid.map(essence))).not.toEqual(JSON.stringify(z.valid.map(essence)))
   })
 })

@@ -47,12 +47,29 @@ export type MotifSource =
    * recipe = "contour/rhythm" or "evolved #rank"; the batch seed (plus the
    * motif's own metadata and keepers, for evolved batches) reproduces it.
    * fitness = Gaussian multi-feature score at generation time. */
-  | { kind: 'symbolic'; batchId: string; seed: number; recipe: string; fitness?: number }
+  | {
+      kind: 'symbolic'
+      batchId: string
+      seed: number
+      recipe: string
+      fitness?: number
+      /** Non-line voicing at generation time — reproduction is (seed, brief)
+       * and the brief isn't stored, so the switch rides on the source. */
+      voicing?: 'chords' | 'both'
+    }
   /** Tier-1 evolution survivor descended from user-kept motifs: parentIds are
    * its 0–4 distinct keeper ancestors accumulated through crossover/mutation
    * generations. Children start their own family (fresh triage candidates);
    * ancestry stays queryable via parentIds. */
-  | { kind: 'ga'; batchId: string; seed: number; op: string; parentIds: string[]; fitness?: number }
+  | {
+      kind: 'ga'
+      batchId: string
+      seed: number
+      op: string
+      parentIds: string[]
+      fitness?: number
+      voicing?: 'chords' | 'both'
+    }
   /** Tier-2 offline generation: on-device neural model (SkyTNT midi-model).
    * parentId set when the candidate continued a keeper (neural variation);
    * like 'ga', children start their own family. fitness ranks the batch. */
@@ -60,7 +77,14 @@ export type MotifSource =
   /** Tier-1 genetic-riff engine (ga-riffs port): fitness-evolved rhythm genome
    * plus seeded in-key pitch assignment. preset is the resolved concrete name
    * (never 'any'); seed reproduces the exact riff. Always a fresh family root. */
-  | { kind: 'genetic'; batchId: string; seed: number; preset: string; fitness: number }
+  | {
+      kind: 'genetic'
+      batchId: string
+      seed: number
+      preset: string
+      fitness: number
+      voicing?: 'chords' | 'both'
+    }
   /** Joe's own material from the Noodle panel: recorded via Web MIDI or
    * musical typing, transcribed from the mic (method says how), or penciled
    * straight into the roll. Always a fresh family root. */
@@ -73,6 +97,11 @@ export type MotifSource =
 export type Rating = 0 | 1 | 2 | 3 | 4 | 5
 
 export type Texture = 'lead' | 'poly'
+
+/** Generation voicing switch: melodic line (default), a chord progression, or
+ * melody + a harmonized chord accompaniment part. Absent on a MotifSource =
+ * 'line', so pre-voicing records and seeds reproduce untouched. */
+export type Voicing = 'line' | 'chords' | 'both'
 
 export interface Motif {
   id: string
@@ -114,6 +143,8 @@ export interface GenerationBrief {
   text: string // free-text: contour, rhythmic character, emotional intent
   allowChromatic: boolean
   texture: Texture // lead melody with light harmony vs free polyphony
+  /** LINE / CHORDS / BOTH switch: melodic line, chord progression, or both. */
+  voicing: Voicing
   includeRhythm: boolean // ask for a GM-pitch drums part
   /** EXTRA toggle: demand a fuller arrangement — 4–6 parts with distinct roles. */
   extraInstruments: boolean

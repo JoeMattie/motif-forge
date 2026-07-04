@@ -8,6 +8,7 @@ import {
   isInScale,
   pitchToDegree,
   degreeToPitch,
+  diatonicStack,
   pitchName,
   pitchToHz,
 } from '../src/core/theory'
@@ -101,6 +102,55 @@ describe('pitch ↔ scale-degree decomposition', () => {
           const pos = pitchToDegree(pitch, key, mode)
           expect(degreeToPitch(pos, key, mode), `pitch ${pitch} in ${key} ${mode}`).toBe(pitch)
         }
+      }
+    }
+  })
+})
+
+describe('diatonicStack', () => {
+  // Degree-index space: octave * 7 + degree, so 5 * 7 = C4's octave in C.
+  const OCT5 = 5 * 7
+
+  test('C ionian triads: I = C-E-G, ii = D-F-A, vii° = B-D-F', () => {
+    expect(diatonicStack(OCT5 + 0, 3, 'C', 'ionian')).toEqual([60, 64, 67]) // C4 E4 G4
+    expect(diatonicStack(OCT5 + 1, 3, 'C', 'ionian')).toEqual([62, 65, 69]) // D4 F4 A4
+    expect(diatonicStack(OCT5 + 6, 3, 'C', 'ionian')).toEqual([71, 74, 77]) // B4 D5 F5
+  })
+
+  test('size 4 adds the diatonic seventh (maj7 on I, dominant 7th on V)', () => {
+    expect(diatonicStack(OCT5 + 0, 4, 'C', 'ionian')).toEqual([60, 64, 67, 71]) // Cmaj7
+    expect(diatonicStack(OCT5 + 4, 4, 'C', 'ionian')).toEqual([67, 71, 74, 77]) // G7
+  })
+
+  test('chord quality falls out of the mode', () => {
+    // A aeolian i is a minor triad; C ionian I is major.
+    const [rootMin, thirdMin] = diatonicStack(OCT5 + 0, 3, 'A', 'aeolian')
+    expect(thirdMin - rootMin).toBe(3)
+    const [rootMaj, thirdMaj] = diatonicStack(OCT5 + 0, 3, 'C', 'ionian')
+    expect(thirdMaj - rootMaj).toBe(4)
+  })
+
+  test('every tone is in scale for every degree in all 7 modes', () => {
+    for (const key of ['C', 'F#', 'Eb', 'B']) {
+      for (const mode of MODES) {
+        for (let degree = 0; degree < 7; degree++) {
+          for (const size of [3, 4] as const) {
+            const tones = diatonicStack(4 * 7 + degree, size, key, mode)
+            expect(tones).toHaveLength(size)
+            for (let i = 1; i < tones.length; i++) expect(tones[i]).toBeGreaterThan(tones[i - 1])
+            for (const p of tones) expect(isInScale(p, key, mode)).toBe(true)
+          }
+        }
+      }
+    }
+  })
+
+  test('octave arithmetic: +7 degree indices = +12 semitones on every tone', () => {
+    for (const mode of MODES) {
+      for (let degree = 0; degree < 7; degree++) {
+        const low = diatonicStack(4 * 7 + degree, 4, 'D', mode)
+        const high = diatonicStack(5 * 7 + degree, 4, 'D', mode)
+        expect(high).toEqual(low.map((p) => p + 12))
       }
     }
   })

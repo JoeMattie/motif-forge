@@ -12,7 +12,7 @@ import {
 } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { CaretDownIcon, CaretRightIcon, DiceFiveIcon } from '@phosphor-icons/react'
-import type { GenerationBrief, Mode, Motif, SynthPreset } from '../types'
+import type { GenerationBrief, Mode, Motif, SynthPreset, Voicing } from '../types'
 import { MODES } from '../core/theory'
 import { generateBatch } from '../api/generate'
 import {
@@ -60,7 +60,7 @@ const MODE_SHORT: Record<Mode, string> = {
 
 /** Brief parameters that can be re-rolled per generation via the dice toggles.
  * 'parts' covers the lead/rhythm/extra toggles together with one dice. */
-type DiceParam = 'key' | 'mode' | 'bars' | 'tempo' | 'groove' | 'parts' | 'chromatic'
+type DiceParam = 'key' | 'mode' | 'bars' | 'tempo' | 'groove' | 'parts' | 'voicing' | 'chromatic'
 
 const NO_DICE: Record<DiceParam, boolean> = {
   key: false,
@@ -69,6 +69,7 @@ const NO_DICE: Record<DiceParam, boolean> = {
   tempo: false,
   groove: false,
   parts: false,
+  voicing: false,
   chromatic: false,
 }
 
@@ -141,6 +142,14 @@ function DiceToggle({
 
 const PARTLESS_CHIP_HINT =
   'Not used by this engine — INSTANT and GENETIC generate a single melodic line (INSTANT can still add drums via RHYTHM). Play melodic bones through any sound with the transport-strip picker'
+
+const NEURAL_VOICING_HINT =
+  'The on-device model composes freely — it can’t be steered to chords. Use INSTANT or CLAUDE.'
+
+/** Engine-legal voicing values (NEURAL can't be steered; GENETIC's single
+ * rhythm genome has no separate accompaniment to carry BOTH). */
+const legalVoicings = (engine: Engine): readonly Voicing[] =>
+  engine === 'neural' ? ['line'] : engine === 'genetic' ? ['line', 'chords'] : ['line', 'chords', 'both']
 
 type Engine = 'instant' | 'genetic' | 'neural' | 'claude'
 
@@ -298,6 +307,12 @@ export function GenerationPanel() {
   const [text, setText] = useState('')
   const [allowChromatic, setAllowChromatic] = useState(false)
   const [lead, setLead] = useState(true) // on = 'lead' texture, off = free poly
+  const [voicing, setVoicing] = useState<Voicing>('line')
+  // An engine switch can make the current voicing illegal (NEURAL: line only;
+  // GENETIC: no BOTH) — snap back to LINE, mirroring the claude fallback above.
+  useEffect(() => {
+    if (!legalVoicings(engine).includes(voicing)) setVoicing('line')
+  }, [engine, voicing])
   const [includeRhythm, setIncludeRhythm] = useState(true)
   const [extraInstruments, setExtraInstruments] = useState(false)
   // Latched = every offline candidate gets a rolled synth patch instead of the
@@ -317,6 +332,7 @@ export function GenerationPanel() {
     setText('')
     setAllowChromatic(false)
     setLead(true)
+    setVoicing('line')
     setIncludeRhythm(true)
     setExtraInstruments(false)
     setRandomSound(false)
@@ -469,6 +485,11 @@ export function GenerationPanel() {
     const rolledRhythm = dice.parts ? coin() : includeRhythm
     const rolledExtra = dice.parts ? coin() : extraInstruments
     const rolledChromatic = dice.chromatic ? coin() : allowChromatic
+    // Voicing rolls from (and always clamps to) the engine-legal set:
+    // NEURAL coerces to line, GENETIC never gets both.
+    const legal = legalVoicings(engine)
+    const diced = dice.voicing ? rollFrom(legal) : voicing
+    const rolledVoicing: Voicing = legal.includes(diced) ? diced : 'line'
     if (dice.key) setKey(rolledKey)
     if (dice.mode) setMode(rolledMode)
     if (dice.tempo) setTempo(rolledTempo)
@@ -478,6 +499,7 @@ export function GenerationPanel() {
       setIncludeRhythm(rolledRhythm)
       setExtraInstruments(rolledExtra)
     }
+    if (dice.voicing) setVoicing(rolledVoicing)
     if (dice.chromatic) setAllowChromatic(rolledChromatic)
     return {
       key: rolledKey,
@@ -489,6 +511,7 @@ export function GenerationPanel() {
       text,
       allowChromatic: rolledChromatic,
       texture: rolledLead ? 'lead' : 'poly',
+      voicing: rolledVoicing,
       includeRhythm: rolledRhythm,
       extraInstruments: rolledExtra,
     }
@@ -545,12 +568,21 @@ export function GenerationPanel() {
         : `${engine.toUpperCase()} · `
   // Diced parameters read as '?' — they re-roll on every generation press.
   // Engines that ignore the texture chips summarize as a bare LINE (+RHYTHM
-  // when INSTANT will lay its drum part).
-  const partsSummary = dice.parts
+  // when INSTANT will lay its drum part). Voicing folds into the texture
+  // token: CHORDS replaces it (no melody to voice), BOTH appends +CHORDS.
+  const texToken = dice.parts
     ? 'PARTS?'
     : noTextures
-      ? `LINE${!noRhythm && includeRhythm ? '+RHYTHM' : ''}`
-      : `${lead ? 'LEAD' : 'POLY'}${extraInstruments ? '+XTRA' : ''}${includeRhythm ? '+RHYTHM' : ''}`
+      ? 'LINE'
+      : `${lead ? 'LEAD' : 'POLY'}${extraInstruments ? '+XTRA' : ''}`
+  const rhythmSuffix = dice.parts ? '' : !noRhythm && includeRhythm ? '+RHYTHM' : ''
+  const partsSummary = dice.voicing
+    ? `${texToken}+VOICE?${rhythmSuffix}`
+    : voicing === 'chords'
+      ? `CHORDS${dice.parts ? '+PARTS?' : rhythmSuffix}`
+      : voicing === 'both'
+        ? `${texToken}+CHORDS${rhythmSuffix}`
+        : `${texToken}${rhythmSuffix}`
   const summary = `${enginePrefix}${dice.key ? '?' : key} ${dice.mode ? '?' : mode.toUpperCase()} · ${dice.tempo ? '?' : tempo} BPM · ${dice.bars ? '?' : bars} BARS · ${partsSummary}${dice.chromatic ? '+CHR?' : allowChromatic ? '+CHR' : ''}`
 
   const actions = () => (
@@ -800,6 +832,47 @@ export function GenerationPanel() {
         <div className="gen-divider" />
         <div className="gen-parts">
           <span className="micro gen-label-dice" style={{ letterSpacing: '.14em' }}>
+            Voicing
+            <DiceToggle
+              what="the voicing"
+              on={dice.voicing}
+              onToggle={() => toggleDice('voicing')}
+              disabled={engine === 'neural'}
+            />
+          </span>
+          <Tooltip
+            label={
+              engine === 'neural'
+                ? NEURAL_VOICING_HINT
+                : 'LINE: melodic material (today’s behavior). CHORDS: the motif IS a diatonic chord progression. BOTH: melody plus a harmonized chord accompaniment part'
+            }
+          >
+            <SegmentedControl
+              disabled={dice.voicing || engine === 'neural'}
+              value={voicing}
+              onChange={(v) => setVoicing(v as Voicing)}
+              data={[
+                { value: 'line', label: 'LINE' },
+                { value: 'chords', label: 'CHORDS' },
+                {
+                  value: 'both',
+                  disabled: engine === 'genetic',
+                  label: (
+                    <Tooltip
+                      label={
+                        engine === 'genetic'
+                          ? 'GENETIC riffs are one evolved rhythm genome — no separate accompaniment. Use INSTANT or CLAUDE for BOTH'
+                          : 'Melody plus a harmonized chord accompaniment voiced below it'
+                      }
+                    >
+                      <span>BOTH</span>
+                    </Tooltip>
+                  ),
+                },
+              ]}
+            />
+          </Tooltip>
+          <span className="micro gen-label-dice" style={{ letterSpacing: '.14em' }}>
             Parts
             <DiceToggle
               what="the lead/rhythm/extra toggles (all three re-roll together)"
@@ -813,11 +886,17 @@ export function GenerationPanel() {
               label={
                 noTextures
                   ? PARTLESS_CHIP_HINT
-                  : 'Lead: one clear melodic line with occasional chords (≤4 voices). Off: freely polyphonic (≤6 voices, up to 4 parts)'
+                  : voicing === 'chords' && !dice.voicing
+                    ? 'CHORDS voicing has no melody — the lead/poly texture doesn’t apply'
+                    : 'Lead: one clear melodic line with occasional chords (≤4 voices). Off: freely polyphonic (≤6 voices, up to 4 parts)'
               }
             >
               <span className="gen-chip">
-                <Chip checked={lead} onChange={setLead} disabled={noTextures || dice.parts}>
+                <Chip
+                  checked={lead}
+                  onChange={setLead}
+                  disabled={noTextures || dice.parts || (voicing === 'chords' && !dice.voicing)}
+                >
                   lead
                 </Chip>
               </span>

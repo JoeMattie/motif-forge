@@ -81,6 +81,33 @@ export function degreeToPitch(pos: DegreePosition, key: string, mode: Mode): num
   return root + pos.octave * 12 + MODE_INTERVALS[mode][pos.degree] + pos.chromaticOffset
 }
 
+/**
+ * Stack diatonic thirds on a root in degree-index space (octave * 7 + degree,
+ * the idiom in walk.ts/pitch.ts): +0, +2, +4 (+6 for a 7th chord), each
+ * resolved through degreeToPitch with chromaticOffset 0 — in-scale by
+ * construction in all 7 modes, with the chord quality (maj/min/dim) falling
+ * out of the mode's intervals.
+ */
+export function diatonicStack(
+  rootDegreeIdx: number,
+  size: 3 | 4,
+  key: string,
+  mode: Mode,
+): number[] {
+  const tones: number[] = []
+  for (let t = 0; t < size; t++) {
+    const idx = rootDegreeIdx + t * 2
+    tones.push(
+      degreeToPitch(
+        { degree: ((idx % 7) + 7) % 7, octave: Math.floor(idx / 7), chromaticOffset: 0 },
+        key,
+        mode,
+      ),
+    )
+  }
+  return tones
+}
+
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
 export function pitchName(pitch: number): string {

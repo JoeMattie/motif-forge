@@ -28,6 +28,7 @@ const brief = (partial: Partial<GenerationBrief> = {}): GenerationBrief => ({
   text: '',
   allowChromatic: false,
   texture: 'lead',
+  voicing: 'line',
   includeRhythm: false,
   extraInstruments: false,
   ...partial,
@@ -306,6 +307,53 @@ describe('generateGeneticBatch', () => {
     }
     // Six independent rolls all landing the same groove would be a broken rng.
     expect(new Set(rationales.map((r) => r.slice(0, r.indexOf(', fitness')))).size).toBeGreaterThanOrEqual(2)
+  })
+
+  it("'chords' voicing emits low-voiced in-scale chord stabs, still partless and deterministic", () => {
+    const b = brief({ voicing: 'chords', bars: 2 })
+    const a = generateGeneticBatch(b, 3, 'techno', 77)
+    const c = generateGeneticBatch(b, 3, 'techno', 77)
+    expect(a.valid.map(essence)).toEqual(c.valid.map(essence))
+    const stepDur = beatsPerBar(b.timeSig) / RIFF_PRESETS.techno.steps
+    for (const m of a.valid) {
+      expect(m.parts).toEqual([])
+      expect(m.source).toMatchObject({ kind: 'genetic', preset: 'techno', voicing: 'chords' })
+      expect(m.rationale).toContain('chord riff')
+      const byOnset = new Map<number, number[]>()
+      for (const n of m.notes) {
+        expect(isInScale(n.pitch, m.key, m.mode)).toBe(true)
+        expect(n.pitch).toBeGreaterThanOrEqual(36)
+        expect(n.pitch).toBeLessThanOrEqual(96)
+        expect(n.durationBeats).toBeCloseTo(stepDur, 9)
+        byOnset.set(n.startBeat, [...(byOnset.get(n.startBeat) ?? []), n.pitch])
+      }
+      for (const pitches of byOnset.values()) {
+        const unique = new Set(pitches)
+        // Triads, plus the segment's seeded 7th on accents: 3-4 tones, root low.
+        expect(unique.size).toBeGreaterThanOrEqual(3)
+        expect(unique.size).toBeLessThanOrEqual(4)
+        const root = Math.min(...pitches)
+        expect(root).toBeGreaterThanOrEqual(45)
+        expect(root).toBeLessThanOrEqual(57)
+      }
+    }
+  })
+
+  it("'both' voicing clamps defensively to line (the UI gates it off this engine)", () => {
+    const a = generateGeneticBatch(brief({ voicing: 'both' }), 2, 'tribal', 5)
+    const b = generateGeneticBatch(brief({ voicing: 'line' }), 2, 'tribal', 5)
+    expect(a.valid.map(essence)).toEqual(b.valid.map(essence))
+    for (const m of a.valid) {
+      if (m.source.kind === 'genetic') expect(m.source.voicing).toBeUndefined()
+    }
+  })
+
+  it("'line' riffs stay strictly monophonic (one pitch per onset)", () => {
+    const { valid } = generateGeneticBatch(brief({ bars: 2 }), 3, 'techno', 41)
+    for (const m of valid) {
+      const starts = m.notes.map((n) => n.startBeat)
+      expect(new Set(starts).size).toBe(starts.length)
+    }
   })
 
   it("'any' rolls a concrete preset per motif from its seed", () => {

@@ -1,4 +1,4 @@
-import type { GenerationBrief, Motif, Texture } from '../types'
+import type { GenerationBrief, Motif, Texture, Voicing } from '../types'
 import { beatsPerBar, scalePitchClasses, MODES } from '../core/theory'
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -27,6 +27,21 @@ function textureRule(texture: Texture, extra: boolean): string {
     : `- Texture: freely polyphonic (up to 4 parts). Chords, sustained pads under moving lines, and simple counterpoint are all welcome. Never more than 6 simultaneous voices.`
 }
 
+/** CHORDS voicing: the motif IS a chord progression — replaces the texture rule. */
+const CHORDS_RULE = `- Texture: each motif IS a chord progression, not a melody. Exactly one non-drum part, named "chords", carrying root-position diatonic triads (occasional 7th chords) — 3-4 simultaneous notes per chord, every chord tone sharing the same startBeat and duration, no inversions or suspensions. Use functional harmony (tonic/subdominant/dominant motion) with an authentic V-I cadence in the final bar. Chord roots between MIDI 48 and 60; 1-2 chords per bar.`
+
+/** BOTH voicing: appended to the texture rule — a harmonized accompaniment part. */
+const BOTH_RULE = `- Accompaniment: additionally include one part named "chords" — a root-position diatonic chord accompaniment (triads, occasional 7ths, 1-2 chords per bar, authentic cadence at the end) harmonized so the lead's notes are chord tones of the chord sounding under them. Voice it BELOW the melody, quieter than the lead, and never exceed 8 simultaneous voices across all parts combined.`
+
+/** The texture/voicing rule block: LINE keeps the plain texture rule, CHORDS
+ * replaces it (texture is moot without a melody), BOTH appends the
+ * accompaniment demand. */
+function voicingRules(voicing: Voicing, texture: Texture, extra: boolean): string {
+  if (voicing === 'chords') return CHORDS_RULE
+  if (voicing === 'both') return `${textureRule(texture, extra)}\n${BOTH_RULE}`
+  return textureRule(texture, extra)
+}
+
 const SHARED_TAIL_RULES = `- At least 3 notes per motif; velocities 1-127 shaped musically (phrase peaks louder, inner voices softer than the lead).
 - Vary rhythm ACROSS the batch: no two motifs with the same rhythmic profile, and avoid runs of straight eighth notes unless the brief asks for them. Mix note lengths, use rests deliberately, syncopate some candidates.
 - Land each phrase ending deliberately: on a stable degree (1, 3, 5) for resolution, or an intentionally unstable one if the brief calls for tension.
@@ -38,12 +53,13 @@ function hardRules(
   brief: Pick<GenerationBrief, 'key' | 'mode' | 'bars' | 'timeSig' | 'allowChromatic'>,
   texture: Texture,
   extra = false,
+  voicing: Voicing = 'line',
 ): string {
   const pcs = scalePitchClasses(brief.key, brief.mode)
   const pcList = pcs.map((pc) => `${pc} (${NOTE_NAMES[pc]})`).join(', ')
   const totalBeats = brief.bars * beatsPerBar(brief.timeSig)
   return `HARD RULES (motifs violating these are discarded by a validator):
-${textureRule(texture, extra)}
+${voicingRules(voicing, texture, extra)}
 ${instrumentRules(extra)}
 - Exactly ${brief.bars} bars of ${brief.timeSig}: every note must satisfy startBeat + durationBeats <= ${totalBeats}. Fill the phrase — the last note should end at or near beat ${totalBeats}.
 - Pitches are MIDI numbers, integers 36-96. Prefer the melodic register 48-84 (bass voices in polyphony may sit lower).
@@ -75,7 +91,7 @@ CONSTRAINT BRIEF:
 
 Make the ${n} candidates meaningfully different from each other: different contours (arch, descent, zigzag, pedal-tone...), different rhythmic characters, different registers within 48-84.
 
-${hardRules(brief, brief.texture, brief.extraInstruments)}`
+${hardRules(brief, brief.texture, brief.extraInstruments, brief.voicing)}`
 }
 
 /** Free-rein generation: the model picks key, mode, tempo, texture, and instrumentation. */
