@@ -10,12 +10,15 @@
 import type { Mode, Note } from '../../types'
 import { beatsPerBar, isInScale, pitchToDegree } from '../../core/theory'
 import { EPS } from '../../core/validate'
+import { chordAtBeat, chordPitchClasses } from './harmony'
 
 export interface FitnessContext {
   key: string
   mode: Mode
   bars: number
   timeSig: string
+  /** Per-bar chord degrees; absent = the chord-anchoring feature is skipped. */
+  progression?: readonly number[]
 }
 
 export type FitnessFeature =
@@ -33,6 +36,7 @@ export type FitnessFeature =
   | 'repetitionScore'
   | 'tonalAnchor'
   | 'inScaleRatio'
+  | 'chordToneRatio'
 
 export interface FeatureTarget {
   mu: number
@@ -58,6 +62,7 @@ export const DEFAULT_TARGETS: TargetTable = {
   repetitionScore: { mu: 0.3, sigma: 0.18, w: 1.0 },
   tonalAnchor: { mu: 1, sigma: 0.4, w: 0.6 },
   inScaleRatio: { mu: 1, sigma: 0.06, w: 0.8 },
+  chordToneRatio: { mu: 0.72, sigma: 0.2, w: 1.0 },
 }
 
 const GRID = 0.25 // beats per 16th
@@ -83,10 +88,17 @@ function longestRepeat(intervals: number[]): number {
   return best >= 3 ? best : 0
 }
 
+/**
+ * Feature vector for a note list. A feature is `null` when it cannot be
+ * measured in this context (chordToneRatio without a progression, or with no
+ * strong-beat onsets to judge) — fitnessScore skips null features AND their
+ * weight, so scores without a progression are bit-identical to the
+ * pre-progression engine.
+ */
 export function extractFeatures(
   notes: Note[],
   ctx: FitnessContext,
-): Record<FitnessFeature, number> {
+): Record<FitnessFeature, number | null> {
   const bpb = beatsPerBar(ctx.timeSig)
   const totalBeats = ctx.bars * bpb
   const sorted = [...notes].sort((a, b) => a.startBeat - b.startBeat || a.pitch - b.pitch)
@@ -129,6 +141,23 @@ export function extractFeatures(
     return pos.chromaticOffset === 0 && ANCHOR_DEGREES.has(pos.degree) ? 1 : 0
   }
 
+  // Chord anchoring: share of strong-beat onsets whose pitch class belongs to
+  // the bar's chord. Unmeasurable (null) without a progression or when no
+  // strong beat carries an onset.
+  let chordToneRatio: number | null = null
+  if (ctx.progression && ctx.progression.length > 0) {
+    const strongOnsets = sorted.filter((n) =>
+      strong.some((beat) => Math.abs(n.startBeat - beat) < EPS),
+    )
+    if (strongOnsets.length > 0) {
+      const inChord = strongOnsets.filter((n) => {
+        const degree = chordAtBeat(ctx.progression!, n.startBeat, bpb)
+        return chordPitchClasses(degree, ctx.key, ctx.mode).includes(((n.pitch % 12) + 12) % 12)
+      })
+      chordToneRatio = inChord.length / strongOnsets.length
+    }
+  }
+
   return {
     notesPerBar: sorted.length / ctx.bars,
     uniquePitchesPerBar: mean(perBarUnique),
@@ -151,6 +180,7 @@ export function extractFeatures(
     repetitionScore: intervals.length > 0 ? longestRepeat(intervals) / intervals.length : 0,
     tonalAnchor: (anchored(sorted[0]) + anchored(sorted[sorted.length - 1])) / 2,
     inScaleRatio: pitches.filter((p) => isInScale(p, ctx.key, ctx.mode)).length / pitches.length,
+    chordToneRatio,
   }
 }
 
@@ -165,8 +195,10 @@ export function fitnessScore(
   let sum = 0
   let weight = 0
   for (const name of Object.keys(targets) as FitnessFeature[]) {
+    const r = features[name]
+    if (r === null) continue // unmeasurable feature: skip it AND its weight
     const { mu, sigma, w } = targets[name]
-    sum += w * Math.exp(-((features[name] - mu) ** 2) / (2 * sigma * sigma))
+    sum += w * Math.exp(-((r - mu) ** 2) / (2 * sigma * sigma))
     weight += w
   }
   return sum / weight

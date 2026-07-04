@@ -6,19 +6,30 @@
  * only the top n distinct survivors come back; with nothing kept yet the gene
  * pool is all fresh walks. RHYTHM adds a seeded probabilistic drum part.
  */
-import type { GenerationBrief, Mode, Motif, MotifSource, Note, Part } from '../../types'
-import { isInScale, MODES } from '../../core/theory'
+import type { GenerationBrief, InstantSpec, Mode, Motif, MotifSource, Note, Part, SynthPreset } from '../../types'
+import { beatsPerBar, isInScale, MODES } from '../../core/theory'
 import { newId } from '../../core/ids'
 import type { ValidationResult } from '../../core/validate'
-import { childSeed, mulberry32, pick, randInt } from './prng'
+import { childSeed, mulberry32, pick, randInt, type Rng } from './prng'
 import { CONTOURS, randomWalkNotes, RHYTHMS } from './walk'
 import { densityOf, drumNotes } from './drums'
-import { chordProgressionNotes, harmonizeLine, progressionLabel } from './harmony'
-import { EVOLVE_DEFAULTS, type EvolveContext, evolvePopulation } from './evolve'
+import { EVOLVE_DEFAULTS, type EvolveContext, type EvolveTuning, evolvePopulation } from './evolve'
+import { type Mood, moodDensity, moodRange, moodTargets, NEUTRAL_MOOD, shiftRange } from './mood'
+import {
+  bassNotes,
+  chordProgressionNotes,
+  crossPartScore,
+  harmonizeLine,
+  padNotes,
+  progressionFor,
+  progressionLabel,
+} from './harmony'
 
 export { keepersOf, KEEPER_MIN_RATING, GA_RATIOS, GA_DIVERSITY_FLOOR, melodicLine, mutateNotes } from './genetic'
 export { EVOLVE_DEFAULTS, evolvePopulation, populationCounts, type PopulationCounts } from './evolve'
 export { fitnessScore, similarity } from './fitness'
+export { type Mood, moodDensity, moodRange, moodTargets, NEUTRAL_MOOD } from './mood'
+export { parseInstantPlan } from './plan'
 
 /** A random 32-bit batch seed (stored per motif so any result is reproducible). */
 export function randomSeed(): number {
@@ -76,6 +87,22 @@ export function toResult(motifs: Motif[]): ValidationResult {
     errors: [],
   }
 }
+
+/** Walk-register shift for the planner's coarse register request. */
+const REGISTER_SHIFT: Record<NonNullable<InstantSpec['register']>, number> = {
+  low: -7,
+  mid: 0,
+  high: 7,
+}
+
+/** Plain but warm patch for the scaffold's bass part. */
+const BASS_PRESET: SynthPreset = {
+  oscillator: 'triangle',
+  envelope: { attack: 0.01, decay: 0.15, sustain: 0.7, release: 0.2 },
+}
+
+/** Bass takes auditioned per survivor; the most consonant one wins. */
+const BASS_TAKES = 3
 
 /**
  * CHORDS voicing: each motif IS a seeded chord progression — no melody, no GA
@@ -141,36 +168,70 @@ function generateChordBatch(brief: GenerationBrief, n: number, seed: number): Va
 /**
  * One offline batch honoring the brief's key/mode/tempo/bars: evolve a
  * population from (keepers, fresh walks) and keep the fittest n distinct
- * survivors. Deterministic given (seed, brief, keepers) — one mulberry32
- * stream drives the whole run, so the batch seed stored on every motif
- * reproduces it. With includeRhythm each survivor gains a seeded drum part;
- * with BOTH voicing each gains a harmonized chord part (separate childSeed
- * streams, so a seed's lead line is bit-identical whichever way the switch
- * sits). CHORDS voicing bypasses the GA entirely (generateChordBatch).
+ * survivors. Deterministic given (seed, brief, keepers, spec) — one
+ * mulberry32 stream drives the whole run, so the batch seed + spec stored on
+ * every motif reproduce it. The optional spec (MOOD/ENERGY knobs via
+ * brief.mood, or a Claude-planned InstantSpec) shifts fitness targets, walk
+ * register, template weights, and the drum groove. With includeRhythm each
+ * survivor gains a seeded drum part. With BOTH voicing each gains a
+ * harmonized chord part (its own childSeed stream, so a seed's lead line is
+ * bit-identical whichever way the switch sits); with extraInstruments it
+ * gains the chord scaffold instead — a seeded bass line (best of BASS_TAKES
+ * by inter-track consonance) and a sustained pad following the batch
+ * progression. BOTH wins when the two overlap: the harmonized chords part
+ * already fills the harmony role, and stacking the scaffold on top would
+ * blow the 8-voice cap. CHORDS voicing bypasses the GA entirely
+ * (generateChordBatch).
  */
 export function generateSymbolicBatch(
   brief: GenerationBrief,
   n: number,
   keepers: Motif[],
   seed: number,
+  spec?: InstantSpec,
 ): ValidationResult {
   if (brief.voicing === 'chords') return generateChordBatch(brief, n, seed)
   const both = brief.voicing === 'both'
   const batchId = newId()
   const rng = mulberry32(seed)
+  const mood: Mood = {
+    valence: spec?.valence ?? brief.mood?.valence ?? NEUTRAL_MOOD.valence,
+    arousal: spec?.arousal ?? brief.mood?.arousal ?? NEUTRAL_MOOD.arousal,
+  }
+  // Always draw the progression from the main stream — even when the spec
+  // supplies one — so replaying with the stored (resolved) spec consumes the
+  // stream identically to the original run.
+  const drawn = progressionFor(brief.bars, rng)
+  const progression =
+    spec?.progression && spec.progression.length > 0 ? spec.progression : drawn
   const ctx: EvolveContext = {
     key: brief.key,
     mode: brief.mode,
     bars: brief.bars,
     timeSig: brief.timeSig,
     tempo: brief.tempo,
+    progression,
+  }
+  const tuning: EvolveTuning = {
+    targets: moodTargets(mood),
+    range: shiftRange(moodRange(mood), REGISTER_SHIFT[spec?.register ?? 'mid']),
+    contourWeights: spec?.contourWeights,
+    rhythmWeights: spec?.rhythmWeights,
+  }
+  // The resolved spec persisted on every motif: replaying (seed, brief,
+  // keepers, source.spec) reproduces the batch without re-planning.
+  const resolvedSpec: InstantSpec = {
+    ...(spec ?? {}),
+    ...(mood.valence !== NEUTRAL_MOOD.valence ? { valence: mood.valence } : {}),
+    ...(mood.arousal !== NEUTRAL_MOOD.arousal ? { arousal: mood.arousal } : {}),
+    progression,
   }
   // Big asks widen the population so survivors stay distinct after dedup.
   const opts = {
     ...EVOLVE_DEFAULTS,
     population: Math.max(EVOLVE_DEFAULTS.population, Math.min(n * 2, 160)),
   }
-  const { picked } = evolvePopulation(ctx, keepers, n, rng, opts)
+  const { picked } = evolvePopulation(ctx, keepers, n, rng, opts, tuning)
   const keeperName = new Map(keepers.map((k) => [k.id, k.name]))
 
   const motifs = picked.map((ind, rank) => {
@@ -179,53 +240,91 @@ export function generateSymbolicBatch(
     const parentIds = [...ind.keeperIds].slice(0, 4)
     const isGa = parentIds.length > 0
 
-    // BOTH: harmonize the survivor's line into a chord accompaniment part.
-    // Voice-cap rule: with a melody part AND a drums part in play, triads only
-    // (1 melody + 3 chord tones + 4 coinciding drum hits = the 8-voice cap);
-    // without drums the 7ths fit (1 + 4 <= 8).
-    const chords = both
-      ? harmonizeLine(
-          ind.notes,
-          {
-            key: ind.ctx.key,
-            mode: ind.ctx.mode,
-            bars: ind.ctx.bars,
-            timeSig: ind.ctx.timeSig,
-            maxVoices: brief.includeRhythm ? 3 : 4,
-          },
-          mulberry32(childSeed(seed, 0x3000 + rank)),
-        )
-      : null
+    // Assemble the part stack by construction (INSTANT bypasses validateBatch):
+    // lead stays part 0 (melodicLine/bay/crossover depend on it); chord, bass,
+    // and pad layers stay inside pitch 36–96 under a mono lead.
+    const parts: Part[] = [{ name: 'lead', instrument: 'synth' }]
+    const layers: Note[][] = [ind.notes]
+    const tags: string[] = []
 
-    let notes = ind.notes
-    let parts: Part[] | undefined
-    let drumTag = ''
-    const chordTag = chords
-      ? ` · ${progressionLabel(chords.segments, ind.ctx.key, ind.ctx.mode)}`
-      : ''
-    if (chords || brief.includeRhythm) {
-      const layers: { part: Part; notes: Note[] }[] = [
-        { part: { name: 'lead', instrument: 'synth' }, notes: ind.notes },
-      ]
-      if (chords) layers.push({ part: { name: 'chords', instrument: 'synth' }, notes: chords.notes })
-      if (brief.includeRhythm) {
-        const density = densityOf(ind.notes, ind.ctx.bars, ind.ctx.timeSig)
-        const drums = drumNotes(
-          { bars: ind.ctx.bars, timeSig: ind.ctx.timeSig, density },
-          mulberry32(childSeed(seed, 0x2000 + rank)),
-        )
-        layers.push({ part: { name: 'kit', instrument: 'drums' }, notes: drums })
-        drumTag = ` · ${density} kit`
+    if (both) {
+      // BOTH: harmonize the survivor's line into a chord accompaniment part.
+      // Voice-cap rule: with a melody part AND a drums part in play, triads
+      // only (1 melody + 3 chord tones + 4 coinciding drum hits = the 8-voice
+      // cap); without drums the 7ths fit (1 + 4 <= 8).
+      const chords = harmonizeLine(
+        ind.notes,
+        {
+          key: ind.ctx.key,
+          mode: ind.ctx.mode,
+          bars: ind.ctx.bars,
+          timeSig: ind.ctx.timeSig,
+          maxVoices: brief.includeRhythm ? 3 : 4,
+        },
+        mulberry32(childSeed(seed, 0x3000 + rank)),
+      )
+      parts.push({ name: 'chords', instrument: 'synth' })
+      layers.push(chords.notes)
+      tags.push(progressionLabel(chords.segments, ind.ctx.key, ind.ctx.mode))
+    } else if (brief.extraInstruments) {
+      // EXTRA scaffold — skipped under BOTH, whose chords part already fills
+      // the harmony role (stacking both would blow the 8-voice cap).
+      const harmonyCtx = {
+        bars: ind.ctx.bars,
+        timeSig: ind.ctx.timeSig,
+        key: ind.ctx.key,
+        mode: ind.ctx.mode,
+        energy: mood.arousal,
       }
-      parts = layers.map((l) => l.part)
-      notes = layers
-        .flatMap((l, pi) => l.notes.map((x) => ({ ...x, part: pi })))
-        .sort((a, b) => a.startBeat - b.startBeat || a.pitch - b.pitch)
+      const totalBeats = ind.ctx.bars * beatsPerBar(ind.ctx.timeSig)
+      let bass: Note[] = []
+      let bestScore = -Infinity
+      for (let k = 0; k < BASS_TAKES; k++) {
+        const bassRng: Rng = mulberry32((childSeed(seed, 0x3000 + rank) + k) >>> 0)
+        const take = bassNotes(progression, harmonyCtx, bassRng)
+        const score = crossPartScore(ind.notes, take, totalBeats)
+        if (score > bestScore) {
+          bestScore = score
+          bass = take
+        }
+      }
+      parts.push({ name: 'bass', instrument: 'synth', preset: BASS_PRESET })
+      layers.push(bass)
+      parts.push({ name: 'pad', instrument: 'strings' })
+      layers.push(padNotes(progression, harmonyCtx))
+      tags.push('chord scaffold')
     }
 
+    if (brief.includeRhythm) {
+      const density =
+        spec?.density ??
+        moodDensity(mood.arousal) ??
+        densityOf(ind.notes, ind.ctx.bars, ind.ctx.timeSig)
+      const drums = drumNotes(
+        {
+          bars: ind.ctx.bars,
+          timeSig: ind.ctx.timeSig,
+          density,
+          energy: mood.arousal,
+        },
+        mulberry32(childSeed(seed, 0x2000 + rank)),
+      )
+      parts.push({ name: 'kit', instrument: 'drums' })
+      layers.push(drums)
+      tags.push(`${density} kit`)
+    }
+
+    const multiPart = parts.length > 1
+    const notes = multiPart
+      ? layers
+          .flatMap((layer, part) => layer.map((x) => ({ ...x, part })))
+          .sort((a, b) => a.startBeat - b.startBeat || a.pitch - b.pitch)
+      : ind.notes
+    const tag = tags.length > 0 ? ` · ${tags.join(' · ')}` : ''
+
     const rationale = isGa
-      ? `evolved from ${parentIds.map((id) => `“${keeperName.get(id) ?? id}”`).join(', ')} — fitness ${fit.toFixed(2)}${chordTag}${drumTag}`
-      : `evolved random walk — fitness ${fit.toFixed(2)}${chordTag}${drumTag}`
+      ? `evolved from ${parentIds.map((id) => `“${keeperName.get(id) ?? id}”`).join(', ')} — fitness ${fit.toFixed(2)}${tag}`
+      : `evolved random walk — fitness ${fit.toFixed(2)}${tag}`
     const source: MotifSource = isGa
       ? {
           kind: 'ga',
@@ -235,6 +334,7 @@ export function generateSymbolicBatch(
           parentIds,
           fitness: fit,
           ...(both ? { voicing: 'both' as const } : {}),
+          spec: resolvedSpec,
         }
       : {
           kind: 'symbolic',
@@ -243,13 +343,14 @@ export function generateSymbolicBatch(
           recipe: `evolved #${rank}`,
           fitness: fit,
           ...(both ? { voicing: 'both' as const } : {}),
+          spec: resolvedSpec,
         }
 
     return buildMotif({
       ...ind.ctx,
       name: `${isGa ? 'Evo' : 'Walk'} ${hex4(cs)}`,
       notes,
-      parts,
+      parts: multiPart ? parts : undefined,
       conceptId: null,
       rationale,
       source,

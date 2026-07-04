@@ -14,3 +14,7 @@ public/models/
 .claude/settings.local.json
 skills-lock.json
 .claude/skills/
+
+# Claude Code session artifacts
+.claude/worktrees/
+.claude-shots/

@@ -147,13 +147,16 @@ export interface MutationResult {
   ops: string[]
 }
 
-type MutationOp =
+export type MutationOp =
   | 'transpose-note'
   | 'swap-adjacent'
   | 'invert-interval'
   | 'alter-rhythm-cell'
   | 'transpose-all'
   | 'retrograde-bar'
+  | 'sort-run'
+  | 'repeat-paste'
+  | 'note-rest-toggle'
 
 const OP_WEIGHTS: readonly (readonly [MutationOp, number])[] = [
   ['transpose-note', 24],
@@ -162,14 +165,20 @@ const OP_WEIGHTS: readonly (readonly [MutationOp, number])[] = [
   ['alter-rhythm-cell', 18],
   ['transpose-all', 12],
   ['retrograde-bar', 12],
+  ['sort-run', 10],
+  ['repeat-paste', 14],
+  ['note-rest-toggle', 12],
 ]
 
 /** Drum takes only get ops with no scale-degree math — degree-space moves
- * would remap GM percussion pitches onto the key's scale. */
+ * would remap GM percussion pitches onto the key's scale. (No sort-run
+ * either: sorting GM percussion pitches is meaningless.) */
 const DRUM_OP_WEIGHTS: readonly (readonly [MutationOp, number])[] = [
   ['swap-adjacent', 18],
   ['alter-rhythm-cell', 18],
   ['retrograde-bar', 12],
+  ['repeat-paste', 14],
+  ['note-rest-toggle', 12],
 ]
 
 /** The key/mode/length context mutation ops need — a Motif satisfies it. */
@@ -180,11 +189,12 @@ export interface MutationContext {
   timeSig: string
 }
 
-function applyOp(op: MutationOp, notes: Note[], ctx: MutationContext, rng: Rng): Note[] {
+/** Exported for per-op unit tests; production callers go through mutateNotes. */
+export function applyOp(op: MutationOp, notes: Note[], ctx: MutationContext, rng: Rng): Note[] {
   const { key, mode } = ctx
   const bpb = beatsPerBar(ctx.timeSig)
   const totalBeats = ctx.bars * bpb
-  const out = notes.map((n) => ({ ...n }))
+  let out = notes.map((n) => ({ ...n }))
   switch (op) {
     case 'transpose-note': {
       const i = randInt(rng, 0, out.length - 1)
@@ -233,6 +243,58 @@ function applyOp(op: MutationOp, notes: Note[], ctx: MutationContext, rng: Rng):
         if (n.startBeat >= barStart - EPS && n.startBeat + n.durationBeats <= barEnd + EPS) {
           n.startBeat = barStart + (barEnd - (n.startBeat + n.durationBeats))
         }
+      }
+      break
+    }
+    case 'sort-run': {
+      // Sort the pitches of a short slice asc/desc onto the same onsets — a
+      // pure permutation (timings untouched, always in-scale by construction).
+      if (out.length < 3) break
+      const len = Math.min(out.length, randInt(rng, 3, 6))
+      const start = randInt(rng, 0, out.length - len)
+      const asc = rng() < 0.5
+      const sortedPitches = out
+        .slice(start, start + len)
+        .map((n) => n.pitch)
+        .sort((a, b) => (asc ? a - b : b - a))
+      for (let i = 0; i < len; i++) out[start + i].pitch = sortedPitches[i]
+      break
+    }
+    case 'repeat-paste': {
+      // Copy one bar's fully-contained notes over another bar — REPLACE, not
+      // overlay (overlay would balloon note counts/voices over generations).
+      if (ctx.bars < 2) break
+      const src = randInt(rng, 0, ctx.bars - 1)
+      let dst = randInt(rng, 0, ctx.bars - 2)
+      if (dst >= src) dst++
+      const inBar = (n: Note, bar: number) =>
+        n.startBeat >= bar * bpb - EPS && n.startBeat + n.durationBeats <= (bar + 1) * bpb + EPS
+      const srcNotes = out.filter((n) => inBar(n, src))
+      if (srcNotes.length === 0) break
+      const pasted = [
+        ...out.filter((n) => !inBar(n, dst)),
+        ...srcNotes.map((n) => ({ ...n, startBeat: n.startBeat + (dst - src) * bpb })),
+      ]
+      if (pasted.length < 3) break
+      out = pasted
+      break
+    }
+    case 'note-rest-toggle': {
+      // Coin flip: drop a note into a rest, or split a long note in two.
+      if (rng() < 0.5 && out.length > 3) {
+        out.splice(randInt(rng, 0, out.length - 1), 1)
+      } else {
+        const splittable = out.filter((n) => n.durationBeats >= 0.5 - EPS)
+        if (splittable.length === 0) break
+        const n = splittable[randInt(rng, 0, splittable.length - 1)]
+        const half = n.durationBeats / 2
+        out.push({
+          ...n,
+          startBeat: n.startBeat + half,
+          durationBeats: half,
+          velocity: Math.max(1, n.velocity - 8),
+        })
+        n.durationBeats = half // splitting never adds simultaneity
       }
       break
     }

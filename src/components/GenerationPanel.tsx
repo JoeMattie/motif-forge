@@ -12,9 +12,10 @@ import {
 } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { CaretDownIcon, CaretRightIcon, DiceFiveIcon } from '@phosphor-icons/react'
-import type { GenerationBrief, Mode, Motif, SynthPreset, Voicing } from '../types'
+import type { GenerationBrief, InstantSpec, Mode, Motif, SynthPreset, Voicing } from '../types'
 import { MODES } from '../core/theory'
 import { generateBatch } from '../api/generate'
+import { planInstantSpec } from '../api/plan'
 import {
   fitnessScore,
   generateSymbolicBatch,
@@ -43,6 +44,7 @@ import type { PendingBatch } from '../store/appState'
 import { newId } from '../core/ids'
 import { getAnthropicKey, useClaudeReady } from '../uiPrefs'
 import { CircleOfFifths, KeySignature } from './hw/CircleOfFifths'
+import { Knob } from './hw/Knob'
 
 const KEYS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
 const BARS = [2, 4, 8]
@@ -141,7 +143,12 @@ function DiceToggle({
 }
 
 const PARTLESS_CHIP_HINT =
-  'Not used by this engine — INSTANT and GENETIC generate a single melodic line (INSTANT can still add drums via RHYTHM). Play melodic bones through any sound with the transport-strip picker'
+  'Not used by this engine — INSTANT and GENETIC generate a single melodic line (INSTANT can still add drums via RHYTHM and a chord scaffold via EXTRA). Play melodic bones through any sound with the transport-strip picker'
+
+/** MOOD knob detents, valence −1 → 1. */
+const MOOD_LABELS = ['DARK', 'DUSK', 'NEUT', 'WARM', 'BRIGHT'] as const
+/** ENERGY knob detents, arousal 0 → 1. */
+const ENERGY_LABELS = ['CALM', 'LOW', 'MID', 'HIGH', 'DRIVEN'] as const
 
 const NEURAL_VOICING_HINT =
   'The on-device model composes freely — it can’t be steered to chords. Use INSTANT or CLAUDE.'
@@ -296,9 +303,13 @@ export function GenerationPanel() {
   // drum part under the line); only GENETIC ignores it.
   const noTextures = engine === 'instant' || engine === 'genetic'
   const noRhythm = engine === 'genetic'
-  // Only the LLM composer reads the free-text brief (the concept field is a
-  // category tag and applies to every engine).
-  const briefApplies = engine === 'claude'
+  // INSTANT reads EXTRA as its chord scaffold (bass + pad); only GENETIC
+  // ignores it entirely.
+  const noExtra = engine === 'genetic'
+  // The LLM composer reads the free-text brief directly; INSTANT reads it too
+  // when an API path exists — a small planner call steers the offline engine.
+  // (The concept field is a category tag and applies to every engine.)
+  const briefApplies = engine === 'claude' || (engine === 'instant' && claudeReady)
   const [key, setKey] = useState('D')
   const [mode, setMode] = useState<Mode>('dorian')
   const [tempo, setTempo] = useState(100)
@@ -306,6 +317,10 @@ export function GenerationPanel() {
   const [concept, setConcept] = useState('')
   const [text, setText] = useState('')
   const [allowChromatic, setAllowChromatic] = useState(false)
+  // MOOD/ENERGY knobs (INSTANT only): centered = neutral = today's engine.
+  const [valence, setValence] = useState(0)
+  const [arousal, setArousal] = useState(0.5)
+  const moodTouched = valence !== 0 || arousal !== 0.5
   const [lead, setLead] = useState(true) // on = 'lead' texture, off = free poly
   const [voicing, setVoicing] = useState<Voicing>('line')
   // An engine switch can make the current voicing illegal (NEURAL: line only;
@@ -331,6 +346,8 @@ export function GenerationPanel() {
     setConcept('')
     setText('')
     setAllowChromatic(false)
+    setValence(0)
+    setArousal(0.5)
     setLead(true)
     setVoicing('line')
     setIncludeRhythm(true)
@@ -514,6 +531,8 @@ export function GenerationPanel() {
       voicing: rolledVoicing,
       includeRhythm: rolledRhythm,
       extraInstruments: rolledExtra,
+      // Always included — a centered (neutral) mood is inert by construction.
+      mood: { valence, arousal },
     }
   }
 
@@ -526,10 +545,28 @@ export function GenerationPanel() {
       randomSound ? { ...r, valid: r.valid.map(withRandomSound) } : r
     if (engine === 'instant') {
       // Offline symbolic tier: one deterministic batch, evolved from keepers.
+      // With brief text and an API path, a small Claude planner call first
+      // turns the text into an InstantSpec (mood, template weights, chord
+      // progression) — planner failure of any kind falls back silently to the
+      // unplanned engine. Touched knobs always beat the plan's mood.
       const keepers = keepersOf(motifs.values())
-      queueBatch(count, label, async () =>
-        patch(generateSymbolicBatch(brief, count, keepers, randomSeed())),
-      )
+      const wantPlan = claudeReady && brief.text.trim() !== ''
+      queueBatch(count, label, async (onStep) => {
+        let spec: InstantSpec | undefined
+        if (wantPlan) {
+          const plan = await planInstantSpec(brief, onStep)
+          if (plan) {
+            spec = { ...plan, plannedBy: 'claude' }
+            if (moodTouched) {
+              // brief.mood carries the knob values; drop the plan's opinion.
+              delete spec.valence
+              delete spec.arousal
+            }
+          }
+          onStep('evolving the batch offline')
+        }
+        return patch(generateSymbolicBatch(brief, count, keepers, randomSeed(), spec))
+      })
       return
     }
     if (engine === 'genetic') {
@@ -567,13 +604,14 @@ export function GenerationPanel() {
         ? `GENETIC/${dice.groove ? '?' : riffPreset.toUpperCase()} · `
         : `${engine.toUpperCase()} · `
   // Diced parameters read as '?' — they re-roll on every generation press.
-  // Engines that ignore the texture chips summarize as a bare LINE (+RHYTHM
-  // when INSTANT will lay its drum part). Voicing folds into the texture
-  // token: CHORDS replaces it (no melody to voice), BOTH appends +CHORDS.
+  // Engines that ignore the texture chips summarize as a bare LINE (+SCAFFOLD
+  // when INSTANT will lay its bass+pad, +RHYTHM when it lays its drum part).
+  // Voicing folds into the texture token: CHORDS replaces it (no melody to
+  // voice), BOTH appends +CHORDS (and mutes the scaffold, which yields to it).
   const texToken = dice.parts
     ? 'PARTS?'
     : noTextures
-      ? 'LINE'
+      ? `LINE${!noExtra && extraInstruments && voicing !== 'both' ? '+SCAFFOLD' : ''}`
       : `${lead ? 'LEAD' : 'POLY'}${extraInstruments ? '+XTRA' : ''}`
   const rhythmSuffix = dice.parts ? '' : !noRhythm && includeRhythm ? '+RHYTHM' : ''
   const partsSummary = dice.voicing
@@ -583,7 +621,10 @@ export function GenerationPanel() {
       : voicing === 'both'
         ? `${texToken}+CHORDS${rhythmSuffix}`
         : `${texToken}${rhythmSuffix}`
-  const summary = `${enginePrefix}${dice.key ? '?' : key} ${dice.mode ? '?' : mode.toUpperCase()} · ${dice.tempo ? '?' : tempo} BPM · ${dice.bars ? '?' : bars} BARS · ${partsSummary}${dice.chromatic ? '+CHR?' : allowChromatic ? '+CHR' : ''}`
+  const moodSummary = moodTouched
+    ? ` · MOOD ${MOOD_LABELS[Math.round((valence + 1) * 2)]}/${ENERGY_LABELS[Math.round(arousal * 4)]}`
+    : ''
+  const summary = `${enginePrefix}${dice.key ? '?' : key} ${dice.mode ? '?' : mode.toUpperCase()} · ${dice.tempo ? '?' : tempo} BPM · ${dice.bars ? '?' : bars} BARS · ${partsSummary}${dice.chromatic ? '+CHR?' : allowChromatic ? '+CHR' : ''}${engine === 'instant' ? moodSummary : ''}`
 
   const actions = () => (
     <>
@@ -733,7 +774,7 @@ export function GenerationPanel() {
                 {
                   value: 'instant',
                   label: (
-                    <Tooltip label="Offline evolution: your kept motifs (★3+) and fresh walks bred against a musical fitness, best survivors only — free, immediate. RHYTHM adds a seeded drum part">
+                    <Tooltip label="Offline evolution: your kept motifs (★3+) and fresh walks bred against a musical fitness, best survivors only — free, immediate. RHYTHM adds a seeded drum part, EXTRA a bass+pad chord scaffold; brief text plans it via Claude when a key is set">
                       <span>INSTANT</span>
                     </Tooltip>
                   ),
@@ -772,6 +813,34 @@ export function GenerationPanel() {
               ]}
             />
           </div>
+          {engine === 'instant' && (
+            <div className="gen-ctl">
+              <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+                <Tooltip label="Mood valence, dark ↔ bright — shifts the fitness targets and melodic register. Centered = neutral, exactly the untinted engine">
+                  <div>
+                    <Knob
+                      label="mood"
+                      value={MOOD_LABELS[Math.round((valence + 1) * 2)]}
+                      position={(valence + 1) / 2}
+                      onPosition={(p) => setValence(p * 2 - 1)}
+                      detents={5}
+                    />
+                  </div>
+                </Tooltip>
+                <Tooltip label="Mood arousal, calm ↔ driven — note density, syncopation, register, and drum energy. Centered = neutral">
+                  <div>
+                    <Knob
+                      label="energy"
+                      value={ENERGY_LABELS[Math.round(arousal * 4)]}
+                      position={arousal}
+                      onPosition={setArousal}
+                      detents={5}
+                    />
+                  </div>
+                </Tooltip>
+              </div>
+            </div>
+          )}
           {engine === 'neural' && <NeuralStrip />}
           {engine === 'genetic' && (
             <div className="gen-ctl">
@@ -815,9 +884,11 @@ export function GenerationPanel() {
           </Tooltip>
           <Tooltip
             label={
-              briefApplies
+              engine === 'claude'
                 ? 'Free-text direction: contour, rhythmic character, emotional intent, references — anything the composer should honor'
-                : 'Only the CLAUDE composer reads free-text direction — the offline engines steer by key/mode/bars (and GROOVE for GENETIC)'
+                : briefApplies
+                  ? 'Free-text direction: a small Claude call plans the INSTANT engine from it (mood, contours, chord progression) — every note is still generated offline. Touched knobs override the plan'
+                  : 'Free-text direction steers CLAUDE, and (with an API key) plans the INSTANT engine — GENETIC and NEURAL steer by key/mode/bars (and GROOVE for GENETIC)'
             }
           >
             <Textarea
@@ -920,16 +991,18 @@ export function GenerationPanel() {
             </Tooltip>
             <Tooltip
               label={
-                noTextures
+                noExtra
                   ? PARTLESS_CHIP_HINT
-                  : 'Fuller arrangements: 4–6 parts with distinct roles (lead, counter-line, pad, bass, drums) instead of the default 1–4'
+                  : engine === 'instant'
+                    ? 'Chord scaffold: a seeded bass line and sustained pad following a per-batch chord progression, auditioned for consonance under the lead'
+                    : 'Fuller arrangements: 4–6 parts with distinct roles (lead, counter-line, pad, bass, drums) instead of the default 1–4'
               }
             >
               <span className="gen-chip">
                 <Chip
                   checked={extraInstruments}
                   onChange={setExtraInstruments}
-                  disabled={noTextures || dice.parts}
+                  disabled={noExtra || dice.parts}
                 >
                   extra
                 </Chip>

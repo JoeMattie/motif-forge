@@ -33,6 +33,32 @@ export type Mode =
   | 'aeolian'
   | 'locrian'
 
+/**
+ * Steering spec for the INSTANT (Tier-1 symbolic) engine — persisted on the
+ * motifs it produces so any planned/mood-shifted batch replays offline from
+ * (seed, brief, keepers, spec) without re-calling the planner. String-keyed
+ * weight maps keep this file dependency-free; the symbolic tier whitelists
+ * the keys against its own CONTOURS/RHYTHMS tables.
+ */
+export interface InstantSpec {
+  /** Mood valence −1..1 (dark → bright); absent = neutral (0). */
+  valence?: number
+  /** Mood arousal 0..1 (calm → driven); absent = neutral (0.5). */
+  arousal?: number
+  /** Relative weights for the walk's contour templates (arch/ascend/…). */
+  contourWeights?: Partial<Record<string, number>>
+  /** Relative weights for the walk's rhythm archetypes (straight/dotted/…). */
+  rhythmWeights?: Partial<Record<string, number>>
+  /** Drum groove density override (else derived from mood/melody). */
+  density?: 'sparse' | 'medium' | 'busy'
+  /** Walk register shift relative to the default lead range. */
+  register?: 'low' | 'mid' | 'high'
+  /** Per-bar chord degrees 0–6 (in-mode triads), cycled across the phrase. */
+  progression?: number[]
+  /** Set when the Claude planner produced this spec from the brief text. */
+  plannedBy?: 'claude'
+}
+
 export type MotifSource =
   | { kind: 'seed' }
   | { kind: 'generated'; brief: string; batchId: string }
@@ -56,6 +82,7 @@ export type MotifSource =
       /** Non-line voicing at generation time — reproduction is (seed, brief)
        * and the brief isn't stored, so the switch rides on the source. */
       voicing?: 'chords' | 'both'
+      spec?: InstantSpec
     }
   /** Tier-1 evolution survivor descended from user-kept motifs: parentIds are
    * its 0–4 distinct keeper ancestors accumulated through crossover/mutation
@@ -69,6 +96,7 @@ export type MotifSource =
       parentIds: string[]
       fitness?: number
       voicing?: 'chords' | 'both'
+      spec?: InstantSpec
     }
   /** Tier-2 offline generation: on-device neural model (SkyTNT midi-model).
    * parentId set when the candidate continued a keeper (neural variation);
@@ -146,8 +174,11 @@ export interface GenerationBrief {
   /** LINE / CHORDS / BOTH switch: melodic line, chord progression, or both. */
   voicing: Voicing
   includeRhythm: boolean // ask for a GM-pitch drums part
-  /** EXTRA toggle: demand a fuller arrangement — 4–6 parts with distinct roles. */
+  /** EXTRA toggle: demand a fuller arrangement — 4–6 parts with distinct roles
+   * (CLAUDE/NEURAL), or the seeded bass + pad chord scaffold (INSTANT). */
   extraInstruments: boolean
+  /** MOOD/ENERGY knobs: valence −1..1, arousal 0..1; absent = neutral. */
+  mood?: { valence: number; arousal: number }
 }
 
 export function parentIdOf(m: Motif): string | null {
