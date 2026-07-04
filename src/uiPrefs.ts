@@ -1,4 +1,4 @@
-import { useColorScheme, useLocalStorage } from '@mantine/hooks'
+import { readLocalStorageValue, useColorScheme, useLocalStorage } from '@mantine/hooks'
 
 /**
  * Global toggle for explanatory hover tooltips. Persisted per browser;
@@ -19,4 +19,20 @@ export function useThemePref() {
 export function useResolvedTheme(pref: ThemePref): 'day' | 'nite' {
   const os = useColorScheme()
   return pref === 'system' ? (os === 'dark' ? 'nite' : 'day') : pref
+}
+
+const ANTHROPIC_KEY_KEY = 'motif-forge:anthropic-key'
+
+/**
+ * User-supplied Anthropic API key, stored only in this browser. When set,
+ * the client calls api.anthropic.com directly; when empty, dev builds fall
+ * back to the Vite proxy (see src/api/client.ts).
+ */
+export function useAnthropicKey() {
+  return useLocalStorage<string>({ key: ANTHROPIC_KEY_KEY, defaultValue: '' })
+}
+
+/** Same value for non-React code — reads through Mantine's serializer. */
+export function getAnthropicKey(): string {
+  return readLocalStorageValue<string>({ key: ANTHROPIC_KEY_KEY, defaultValue: '' })
 }

@@ -1,0 +1,39 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm test
+
+      # public/models/ is gitignored, so the neural model artifacts never enter
+      # this build — the deployed app downloads them from the URL below instead
+      # (Cloudflare Pages caps static files at 25 MiB; the models are ~226 MiB).
+      - run: npm run build
+        env:
+          VITE_MODEL_BASE_URL: ${{ vars.VITE_MODEL_BASE_URL }}
+
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=motif-forge

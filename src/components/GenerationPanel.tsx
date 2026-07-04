@@ -28,6 +28,7 @@ import { validateBatch, type ValidationResult } from '../core/validate'
 import { useAppDispatch, useAppState } from '../store/AppContext'
 import type { PendingBatch } from '../store/appState'
 import { newId } from '../core/ids'
+import { getAnthropicKey } from '../uiPrefs'
 import { Knob } from './hw/Knob'
 
 const KEYS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
@@ -319,6 +320,13 @@ export function GenerationPanel() {
       queueNeuralBatch(count, label, brief)
       return
     }
+    if (!getAnthropicKey() && !import.meta.env.DEV) {
+      dispatch({
+        type: 'GENERATION_FAILED',
+        message: 'CLAUDE needs your Anthropic API key — set it under KEY in the header',
+      })
+      return
+    }
     // Polyphonic motif JSON is bulky — cap each call at 5 motifs so the
     // response fits max_tokens; the queue runs chunks concurrently.
     const chunks: number[] = []
@@ -474,7 +482,7 @@ export function GenerationPanel() {
                 {
                   value: 'claude',
                   label: (
-                    <Tooltip label="LLM composer — honors the brief text, textures, and drums (needs network)">
+                    <Tooltip label="LLM composer — honors the brief text, textures, and drums (needs your API key: KEY in the header)">
                       <span>CLAUDE</span>
                     </Tooltip>
                   ),

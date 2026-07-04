@@ -4,8 +4,9 @@ import { useState } from 'react'
 import { engine } from '../audio/engine'
 import { useAppDispatch, useAppState } from '../store/AppContext'
 import type { TriageMode, View } from '../store/appState'
-import { useThemePref, useTooltipsEnabled, type ThemePref } from '../uiPrefs'
+import { useAnthropicKey, useThemePref, useTooltipsEnabled, type ThemePref } from '../uiPrefs'
 import { AboutModal } from './AboutModal'
+import { ApiKeyModal } from './ApiKeyModal'
 import { HardToggle } from './hw/HardToggle'
 
 const VIEWS: { value: View; label: string }[] = [
@@ -31,7 +32,9 @@ export function Header() {
   const dispatch = useAppDispatch()
   const [themePref, setThemePref] = useThemePref()
   const [tooltipsEnabled, setTooltipsEnabled] = useTooltipsEnabled()
+  const [apiKey] = useAnthropicKey()
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [keyOpen, setKeyOpen] = useState(false)
   const bayOpen = state.mutationTargetId !== null
 
   const subLabel = bayOpen ? 'MUTATION BAY · MF–01 · POLY' : SUB_LABELS[state.view]
@@ -99,6 +102,18 @@ export function Header() {
       <Tooltip label="Explanatory hover tooltips like this one, everywhere in the app">
         <HardToggle on={tooltipsEnabled} label="hints" onChange={setTooltipsEnabled} />
       </Tooltip>
+      <Tooltip
+        label={
+          apiKey
+            ? 'Anthropic API key is set for this browser — click to change or clear it'
+            : 'Set your Anthropic API key to use the CLAUDE engine and LLM mutations'
+        }
+      >
+        <Button data-latched={Boolean(apiKey)} onClick={() => setKeyOpen(true)}>
+          Key
+        </Button>
+      </Tooltip>
+      <ApiKeyModal opened={keyOpen} onClose={() => setKeyOpen(false)} />
     </header>
   )
 }

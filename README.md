@@ -21,7 +21,7 @@ The generation panel's ENGINE switch selects how candidates are made:
 
 - **INSTANT** (default) — fully offline, deterministic, immediate, free. A constrained random walk composes single melodic lines in scale-degree space (always in-key), pulled toward a contour template (arch / ascend / descend / zigzag / flat) with leap-recovery and per-beat rhythm archetypes on a 16th grid. Once you've kept some motifs (rating ★3+), a genetic algorithm joins in: bar-boundary crossover between keepers plus small in-scale mutations, mixed with fresh "immigrants" for diversity. Every candidate stores its PRNG seed, so any motif is reproducible.
 - **NEURAL** — an on-device transformer ([SkyTNT midi-model](https://github.com/SkyTNT/midi-model) `tv2o-medium`, int8-quantized) running in a Web Worker via `onnxruntime-web` on **WebGPU** (no WASM fallback — without WebGPU the app stays on INSTANT + CLAUDE). Opt-in one-time download of ~226 MB, streamed with progress, sha256-verified against a pinned manifest, and cached in OPFS (removable from the panel). Offline after that. A share of each batch continues one of your keepers — the neural analog of the GA. The tokenizer is a byte-identical TypeScript port of the Python reference, verified against golden fixtures.
-- **CLAUDE** — the Anthropic API (`claude-sonnet-4-6`) as composer. The only engine that honors the free-text brief, multi-part textures, sound-designed synth presets, and drum parts. Calls go through a dev-server proxy in chunks of ≤5 motifs, two concurrent.
+- **CLAUDE** — the Anthropic API (`claude-sonnet-4-6`) as composer. The only engine that honors the free-text brief, multi-part textures, sound-designed synth presets, and drum parts. Runs on your own API key (KEY in the header; see [API access](#api-access)) in chunks of ≤5 motifs, two concurrent.
 
 All three engines funnel through the same validation and land in the same triage queue; batches render as pulsing placeholder cards so you can stack requests and keep triaging.
 
@@ -51,7 +51,11 @@ All three engines funnel through the same validation and land in the same triage
 
 ## API access
 
-Only the CLAUDE engine and LLM mutations need credentials. Calls go through a Vite dev-server proxy (`/api/anthropic/*`, see `vite.config.ts`) that injects them server-side — they never reach browser code, and the browser never talks to `api.anthropic.com` directly.
+Only the CLAUDE engine and LLM mutations need credentials.
+
+**Primary path — bring your own key (works everywhere, including the deployed site).** Click **KEY** in the header and paste an API key from [console.anthropic.com](https://console.anthropic.com). It's stored only in your browser's localStorage and sent only to `api.anthropic.com` (direct browser calls, opted in via Anthropic's `anthropic-dangerous-direct-browser-access` header). Clear it any time from the same panel.
+
+**Dev fallback — server-side credentials via the Vite proxy.** With no key set in the UI, dev builds route calls through a dev-server proxy (`/api/anthropic/*`, see `vite.config.ts`) that injects credentials server-side, so they never reach browser code:
 
 **Option A — static API key.** Put a key from [console.anthropic.com](https://console.anthropic.com) in `.env.local`:
 

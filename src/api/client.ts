@@ -1,3 +1,5 @@
+import { getAnthropicKey } from '../uiPrefs'
+
 export interface ClaudeResponse {
   text: string
   stopReason: string
@@ -9,16 +11,39 @@ interface ContentBlock {
 }
 
 /**
- * Calls go through the Vite dev-server proxy (see vite.config.ts), which
- * forwards to api.anthropic.com and injects x-api-key + anthropic-version.
- * Direct browser calls to the API would fail CORS and expose the key.
+ * With a user-supplied key (KEY button in the header, stored in this browser's
+ * localStorage) calls go straight to api.anthropic.com — Anthropic allows CORS
+ * when the request opts in via `anthropic-dangerous-direct-browser-access`.
+ * Without a key, dev builds fall back to the Vite dev-server proxy (see
+ * vite.config.ts), which injects credentials from .env.local server-side.
  */
-const API_URL = '/api/anthropic/v1/messages'
+const DIRECT_URL = 'https://api.anthropic.com/v1/messages'
+const PROXY_URL = '/api/anthropic/v1/messages'
+
+function resolveRequest(): { url: string; headers: Record<string, string> } {
+  const key = getAnthropicKey()
+  if (key) {
+    return {
+      url: DIRECT_URL,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+    }
+  }
+  if (import.meta.env.DEV) {
+    return { url: PROXY_URL, headers: { 'Content-Type': 'application/json' } }
+  }
+  throw new Error('No API key set — click KEY in the header and paste your Anthropic API key (sk-ant-...)')
+}
 
 export async function callClaude(prompt: string, maxTokens: number): Promise<ClaudeResponse> {
-  const response = await fetch(API_URL, {
+  const { url, headers } = resolveRequest()
+  const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
       max_tokens: maxTokens,
@@ -27,7 +52,7 @@ export async function callClaude(prompt: string, maxTokens: number): Promise<Cla
   })
   if (response.status === 401) {
     throw new Error(
-      'API auth failed — put ANTHROPIC_API_KEY=sk-ant-... in .env.local and restart `npm run dev`',
+      'API auth failed — check the key under KEY in the header (or, in dev without a key, ANTHROPIC_API_KEY in .env.local)',
     )
   }
   if (!response.ok) {

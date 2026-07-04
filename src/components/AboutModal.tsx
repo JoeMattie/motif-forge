@@ -4,7 +4,7 @@ const TECH: { name: string; role: string }[] = [
   { name: 'React 19 + TS + Vite', role: 'strict-mode UI shell; everything runs in the browser' },
   { name: 'Mantine + Phosphor', role: 'component library, skinned as hardware keys, knobs and LCDs' },
   { name: 'Tone.js + smplr', role: 'synth voices and sampled instruments over the Web Audio API' },
-  { name: 'Anthropic API', role: 'claude-sonnet-4-6 composes motifs as JSON on the CLAUDE engine' },
+  { name: 'Anthropic API', role: 'claude-sonnet-4-6 composes motifs as JSON on the CLAUDE engine, on your own API key (KEY in the header, stored only in this browser)' },
   { name: 'onnxruntime-web', role: 'WebGPU inference for the on-device NEURAL engine' },
   { name: 'MIDI + WAV', role: 'hand-rolled SMF format-0 writer and WAV encoder, no libraries' },
   { name: 'IndexedDB + OPFS', role: 'local-first persistence for motifs and cached model weights' },
@@ -41,8 +41,8 @@ export function AboutModal({ opened, onClose }: { opened: boolean; onClose: () =
             <span className="about-term">Generate.</span> Three engines: INSTANT builds motifs
             offline with seeded random walks plus a genetic algorithm that breeds your top-rated
             keepers; NEURAL samples a transformer music model running entirely on your GPU;
-            CLAUDE asks Anthropic's model to compose. Every candidate passes the same validator
-            before it reaches the pool.
+            CLAUDE asks Anthropic's model to compose, using your own API key. Every candidate
+            passes the same validator before it reaches the pool.
           </p>
           <p>
             <span className="about-term">Triage.</span> Keyboard-first: arrows move, Space
