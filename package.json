@@ -14,10 +14,12 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
     "@mantine/core": "^9.4.1",
     "@mantine/hooks": "^9.4.1",
     "@mantine/notifications": "^9.4.1",
     "@phosphor-icons/react": "^2.1.10",
+    "@xyflow/react": "^12.11.1",
     "onnxruntime-web": "^1.27.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
