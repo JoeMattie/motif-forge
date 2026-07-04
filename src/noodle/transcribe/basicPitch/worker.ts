@@ -10,7 +10,10 @@
  * window's output and concatenate, clamped to the frame count of the original
  * audio length.
  */
-import * as ort from 'onnxruntime-web'
+// The wasm-EP-only bundle: the full 'onnxruntime-web' entry also references
+// the 25.6 MiB JSEP/WebGPU binary, which this worker never uses — and which
+// is over Cloudflare Pages' 25 MiB per-file limit.
+import * as ort from 'onnxruntime-web/wasm'
 import {
   BP_INPUT_NAME,
   BP_OUTPUT_NOTE,
