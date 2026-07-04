@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, NumberInput, Popover, Select, Tooltip } from '@mantine/core'
+import { Button, Popover, Select, Tooltip } from '@mantine/core'
 import type { Mode, Note } from '../../types'
 import { MODES } from '../../core/theory'
 import type { Transform } from '../../core/transforms'
@@ -89,7 +89,8 @@ export function AdvancedPop({
         </span>
       </Popover.Target>
       <Popover.Dropdown className="advanced-pop" onClick={(e) => e.stopPropagation()}>
-        <div className="transform-aux">
+        {/* the mock's 3-column hardware key grid */}
+        <div className="transform-grid">
           <Tooltip label={pitchTip ?? 'Flip the contour upside down around the first note'}>
             <Button disabled={isDrums} onClick={() => onApplyTransform({ type: 'inversion' })}>
               Invert
@@ -106,6 +107,23 @@ export function AdvancedPop({
               R-Inv
             </Button>
           </Tooltip>
+          <Tooltip label={pitchTip ?? 'Shift the whole take up an octave'}>
+            <Button disabled={isDrums || baseTake.length === 0} onClick={() => octave(1)}>
+              8va ↑
+            </Button>
+          </Tooltip>
+          <Tooltip label={pitchTip ?? 'Shift the whole take down an octave'}>
+            <Button disabled={isDrums || baseTake.length === 0} onClick={() => octave(-1)}>
+              8vb ↓
+            </Button>
+          </Tooltip>
+          <Tooltip
+            label={pitchTip ?? "Keep each note's scale degree but re-spell it in the target mode"}
+          >
+            <Button disabled={isDrums} onClick={() => onApplyTransform({ type: 'modeSwap', targetMode })}>
+              Mode swap
+            </Button>
+          </Tooltip>
         </div>
         <div className="transform-aux">
           <Tooltip label={pitchTip ?? 'Shift every pitch by the chosen number of semitones'}>
@@ -116,23 +134,31 @@ export function AdvancedPop({
               Transpose
             </Button>
           </Tooltip>
-          <NumberInput
-            w={62}
-            size="xs"
-            min={-12}
-            max={12}
-            value={transposeBy}
-            onChange={(v) => setTransposeBy(Number(v) || 0)}
-          />
+          {/* compact hardware stepper instead of the native spinner */}
+          <div className="step-ctl">
+            <button
+              type="button"
+              className="step-key"
+              aria-label="Transpose one semitone lower"
+              disabled={isDrums || transposeBy <= -12}
+              onClick={() => setTransposeBy((v) => Math.max(-12, v - 1))}
+            >
+              −
+            </button>
+            <span className="step-val">{transposeBy > 0 ? `+${transposeBy}` : transposeBy}</span>
+            <button
+              type="button"
+              className="step-key"
+              aria-label="Transpose one semitone higher"
+              disabled={isDrums || transposeBy >= 12}
+              onClick={() => setTransposeBy((v) => Math.min(12, v + 1))}
+            >
+              +
+            </button>
+          </div>
         </div>
         <div className="transform-aux">
-          <Tooltip
-            label={pitchTip ?? "Keep each note's scale degree but re-spell it in the target mode"}
-          >
-            <Button disabled={isDrums} onClick={() => onApplyTransform({ type: 'modeSwap', targetMode })}>
-              Mode swap
-            </Button>
-          </Tooltip>
+          <span className="step-label">Target mode</span>
           <Select
             w={110}
             size="xs"
@@ -148,18 +174,6 @@ export function AdvancedPop({
             }}
             data={MODES.filter((m) => m !== sourceMode)}
           />
-        </div>
-        <div className="transform-aux">
-          <Tooltip label={pitchTip ?? 'Shift the whole take up an octave'}>
-            <Button disabled={isDrums || baseTake.length === 0} onClick={() => octave(1)}>
-              8va ↑
-            </Button>
-          </Tooltip>
-          <Tooltip label={pitchTip ?? 'Shift the whole take down an octave'}>
-            <Button disabled={isDrums || baseTake.length === 0} onClick={() => octave(-1)}>
-              8vb ↓
-            </Button>
-          </Tooltip>
         </div>
       </Popover.Dropdown>
     </Popover>

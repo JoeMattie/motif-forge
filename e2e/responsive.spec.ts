@@ -43,7 +43,8 @@ for (const width of NARROW_WIDTHS) {
     await expect(page.getByRole('button', { name: 'Generate +5' })).toBeInViewport()
 
     // Collapsed strip wraps its summary + keys instead of overflowing.
-    await page.getByRole('button', { name: /^Generate$/ }).first().click()
+    // Clicking the active GENERATE tab folds the forge dock to its strip.
+    await page.getByRole('tab', { name: /^generate/i }).click()
     await expectNoHorizontalOverflow(page, 'collapsed strip')
   })
 }

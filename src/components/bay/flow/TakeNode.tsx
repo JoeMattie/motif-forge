@@ -5,7 +5,7 @@ import { CircleIcon } from '@phosphor-icons/react'
 import { LcdRoll } from '../../LcdRoll'
 import { AdvancedPop } from '../AdvancedPop'
 import { ClaudePop } from '../ClaudePop'
-import { provenanceLabel } from '../bayTypes'
+import { takeBadge, takeName } from '../bayTypes'
 import { useBayFlow } from './BayFlowContext'
 import type { TakeFlowNode } from './graph'
 
@@ -29,13 +29,14 @@ export const TakeNode = memo(function TakeNode({ data }: NodeProps<TakeFlowNode>
     [source, lcdId, node.notes],
   )
 
-  const badge = provenanceLabel(node)
+  const name = takeName(node)
+  const badge = takeBadge(node)
 
   if (mini) {
     return (
       <Tooltip label={`${badge}${inMix ? ' · in mix' : ''}`}>
         <div
-          className={`tree-node mini${focused ? ' focused' : ''}${inMix ? ' in-mix' : ''}${ghost ? ' ghost' : ''}`}
+          className={`tree-node mini bay-drag-handle${focused ? ' focused' : ''}${inMix ? ' in-mix' : ''}${ghost ? ' ghost' : ''}`}
           onClick={() => callbacks.focusNode(part, node.id)}
         >
           <LcdRoll motif={lcdMotif} height={24} />
@@ -53,11 +54,13 @@ export const TakeNode = memo(function TakeNode({ data }: NodeProps<TakeFlowNode>
       className={`tree-node ${depthCls}${focused ? ' focused' : ''}${inMix ? ' in-mix' : ''}${ghost ? ' ghost' : ''}`}
       onClick={() => callbacks.focusNode(part, node.id)}
     >
-      <div className="node-head">
+      {/* the head doubles as the node's drag handle — interactive chips inside
+          carry `nodrag` so pressing them can't start a drag */}
+      <div className="node-head bay-drag-handle">
         <Tooltip label="Put this take in the mix — it plays instead of the original (Enter)">
           <button
             type="button"
-            className="promote-chip"
+            className="promote-chip nodrag"
             data-promoted={inMix}
             onClick={(e) => {
               e.stopPropagation()
@@ -73,9 +76,10 @@ export const TakeNode = memo(function TakeNode({ data }: NodeProps<TakeFlowNode>
             )}
           </button>
         </Tooltip>
-        {(node.provenance.kind === 'transform' || node.provenance.kind === 'sound') && (
-          <span className={`node-badge ${node.provenance.kind}`}>{badge}</span>
-        )}
+        <Tooltip label={name}>
+          <span className="node-name">{name}</span>
+        </Tooltip>
+        <span className={`node-badge ${node.provenance.kind}`}>{badge}</span>
       </div>
       <LcdRoll motif={lcdMotif} height={lcdHeight} />
       <div className="node-foot">

@@ -9,7 +9,7 @@
 import type { Mode, Motif, Note } from '../types'
 import { beatsPerBar } from '../core/theory'
 
-export type NoodleInput = 'midi' | 'keys' | 'mic' | 'pencil'
+export type NoodleInput = 'midi' | 'keys' | 'mic' | 'pencil' | 'clip'
 export type MicMethod = 'voice' | 'beats' | 'basic-pitch'
 
 export interface NoodleTake {
@@ -58,6 +58,15 @@ function load(): NoodleTake {
 let take: NoodleTake = load()
 const undoStack: (readonly Note[])[] = []
 const listeners = new Set<() => void>()
+
+/** Bumped only when the material is wholesale replaced (recording-pass merge,
+ * transcription, clip load) — the roll re-fits its pitch viewport on this,
+ * never on per-note edits. */
+let materialGen = 0
+
+export function getMaterialGen(): number {
+  return materialGen
+}
 
 function save(): void {
   try {
@@ -137,12 +146,54 @@ export function replaceMaterial(
   undoable = true,
 ): void {
   if (undoable) pushUndo()
+  materialGen++
   set({
     notes,
     input: origin.input,
     method: origin.method,
     drums: origin.drums ?? false,
   })
+}
+
+const revealListeners = new Set<() => void>()
+
+/** Fires when material lands from outside the panel (the N hotkey) so the
+ * panel can unfold and scroll itself into view. */
+export function subscribeReveal(cb: () => void): () => void {
+  revealListeners.add(cb)
+  return () => revealListeners.delete(cb)
+}
+
+/** Load a pool clip into the take for hand-editing (undoable). Multi-part
+ * motifs flatten to their melodic notes; drums-only clips load as a kit take.
+ * Meta (key/mode/tempo/bars/timeSig) follows the clip so LOCK and the loop
+ * grid stay truthful. */
+export function loadClip(m: Motif): void {
+  pushUndo()
+  materialGen++
+  const drumParts = new Set(
+    m.parts.map((p, i) => (p.instrument === 'drums' ? i : -1)).filter((i) => i >= 0),
+  )
+  const melodic = m.notes.filter((n) => !drumParts.has(n.part ?? 0))
+  const drumsOnly = melodic.length === 0 && m.notes.length > 0
+  const picked = drumsOnly ? m.notes : melodic
+  set({
+    notes: picked.map(({ pitch, startBeat, durationBeats, velocity }) => ({
+      pitch,
+      startBeat,
+      durationBeats,
+      velocity,
+    })),
+    tempo: m.tempo,
+    bars: m.bars,
+    timeSig: m.timeSig,
+    key: m.key,
+    mode: m.mode,
+    drums: drumsOnly,
+    input: 'clip',
+    method: undefined,
+  })
+  for (const l of revealListeners) l()
 }
 
 /** The take as an ephemeral Motif for loop audition / the roll's coordinate

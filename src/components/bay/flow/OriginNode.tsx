@@ -61,14 +61,16 @@ export const OriginNode = memo(function OriginNode({ data }: NodeProps<OriginFlo
       className={`origin-cell${mini ? ' compact' : ''}${focused ? ' focused' : ''}`}
       onClick={() => callbacks.focusNode(part, null)}
     >
-      <div className="origin-head">
+      {/* the head doubles as the node's drag handle — interactive icons inside
+          carry `nodrag` so pressing them can't start a drag */}
+      <div className="origin-head bay-drag-handle">
         {swatch}
         <span className="origin-name">{partName}</span>
         {canRollSound && (
           <Tooltip label="Roll a random other sound for this part — a new take, straight into the mix (s)">
             <ActionIcon
               size="xs"
-              className="sound-dice"
+              className="sound-dice nodrag"
               aria-label={`Random sound for ${partName}`}
               onClick={(e) => {
                 e.stopPropagation()
@@ -85,6 +87,7 @@ export const OriginNode = memo(function OriginNode({ data }: NodeProps<OriginFlo
         >
           <ActionIcon
             size="xs"
+            className="nodrag"
             aria-label={`${mini ? 'Expand' : 'Collapse'} ${partName}`}
             onClick={(e) => {
               e.stopPropagation()

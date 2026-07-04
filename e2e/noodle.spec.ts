@@ -8,21 +8,24 @@ import { gotoApp } from './helpers'
  */
 
 async function openNoodle(page: import('@playwright/test').Page): Promise<void> {
-  // The gen panel docks sticky over the scrolling view and, when expanded at
-  // this viewport width, floats over the roll's upper rows — swallowing
-  // pencil clicks. Collapse it to its strip first, like a user would.
-  await page.getByRole('button', { name: /^Generate$/ }).first().click()
-  await page.getByRole('button', { name: /^noodle$/i }).click()
+  // GENERATE and NOODLE share one tabbed dock — switching tabs swaps the
+  // generate module out, so the roll never sits under a floating panel.
+  await page.getByRole('tab', { name: /^noodle/i }).click()
   await expect(page.locator('.noodle-roll')).toBeVisible()
 }
 
-test('panel opens collapsed with an empty take', async ({ page }) => {
+test('noodle tab opens the panel; clicking it again folds to the strip', async ({ page }) => {
   await gotoApp(page)
+  // GENERATE is the default tab — the noodle panel is hidden until switched.
+  await expect(page.locator('.noodle-roll')).toBeHidden()
+  await openNoodle(page)
+  await expect(page.locator('.noodle-svg rect.roll-note')).toHaveCount(0)
+  // Clicking the active tab folds the dock to the summary strip; the commit
+  // key is disabled while the take is empty.
+  await page.getByRole('tab', { name: /^noodle/i }).click()
   const strip = page.locator('.noodle-strip')
   await expect(strip).toBeVisible()
   await expect(strip.getByRole('button', { name: /add to pool/i })).toBeDisabled()
-  await openNoodle(page)
-  await expect(page.locator('.noodle-svg rect.roll-note')).toHaveCount(0)
 })
 
 test('pencil notes, then ADD TO POOL creates a recorded family card', async ({ page }) => {

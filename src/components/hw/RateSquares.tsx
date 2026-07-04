@@ -6,7 +6,7 @@ interface RateSquaresProps {
   onRate: (r: Rating) => void
 }
 
-/** Five 9px hardware rating squares — filled squares = current rating. */
+/** Five 10px hardware rating squares — filled squares = current rating. */
 export function RateSquares({ rating, onRate }: RateSquaresProps) {
   return (
     <span className="rate-squares" title="Rate (keys 1–5 while selected)">

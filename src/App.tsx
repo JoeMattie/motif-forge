@@ -3,8 +3,7 @@ import { Center, Drawer, Group, Loader, Text } from '@mantine/core'
 import { engine } from './audio/engine'
 import { useAppDispatch, useAppState } from './store/AppContext'
 import { SAMPLE_MOTIFS } from './core/sampleMotifs'
-import { GenerationPanel } from './components/GenerationPanel'
-import { NoodlePanel } from './components/NoodlePanel'
+import { ForgeDock } from './components/ForgeDock'
 import { Header } from './components/Header'
 import { TransportStrip } from './components/TransportStrip'
 import { TriageGrid } from './components/TriageGrid'
@@ -52,12 +51,12 @@ export function App() {
       <main>
         <div className="view">
           {/* Mounted once for the app's lifetime (hidden outside triage) so the
-              brief, knob settings, and run progress survive Grid↔Focus toggles
-              and view switches. display:contents keeps the panel a layout child
-              of the .view scroller, which its sticky dock depends on. */}
+              brief, knob settings, run progress, and staged take survive
+              Grid↔Focus toggles and view switches. display:contents keeps the
+              dock a layout child of the .view scroller, which its sticky
+              behavior depends on. */}
           <div style={{ display: state.view === 'triage' ? 'contents' : 'none' }}>
-            <GenerationPanel />
-            <NoodlePanel />
+            <ForgeDock />
           </div>
           {state.view === 'triage' ? (
             state.triageMode === 'grid' ? (

@@ -83,7 +83,19 @@ export interface BuildGraphInput {
   originNotes: Note[][]
 }
 
-const STATIC_FLAGS = {
+// Cards drag from their header row only (.bay-drag-handle), so the knobs,
+// popovers, and keys inside a card can never start a node drag. Dragged
+// positions override the dagre slot and persist per source motif
+// (nodePositions.ts). Pending placeholders stay auto-laid-out.
+const CARD_FLAGS = {
+  draggable: true,
+  dragHandle: '.bay-drag-handle',
+  selectable: false,
+  connectable: false,
+  focusable: false,
+} as const
+
+const PENDING_FLAGS = {
   draggable: false,
   selectable: false,
   connectable: false,
@@ -102,6 +114,36 @@ function makeEdge(from: string, to: string, className?: string): BuiltInEdge {
   return edge
 }
 
+/** Patch-cable color class from the CHILD take's provenance kind:
+ * deterministic transforms green, Claude takes orange, evolve/sound yellow. */
+function edgeKindClass(kind: PartVariation['provenance']['kind']): string {
+  if (kind === 'transform') return 'edge-transform'
+  if (kind === 'llm') return 'edge-llm'
+  return 'edge-evolve' // 'ga' and 'sound'
+}
+
+/** Ids on each selected take's ancestor path — those cables render at full
+ * opacity (the in-mix signal path). */
+function mixPathIds(trees: PartTreeNode[][], selection: Map<number, PartVariation>): Set<string> {
+  const byId = new Map<string, PartVariation>()
+  const collect = (ns: PartTreeNode[]) => {
+    for (const n of ns) {
+      byId.set(n.variation.id, n.variation)
+      collect(n.children)
+    }
+  }
+  for (const t of trees) collect(t)
+  const path = new Set<string>()
+  for (const sel of selection.values()) {
+    let cursor: PartVariation | undefined = byId.get(sel.id)
+    for (let guard = 0; cursor && guard < 1000; guard++) {
+      path.add(cursor.id)
+      cursor = cursor.parentNodeId ? byId.get(cursor.parentNodeId) : undefined
+    }
+  }
+  return path
+}
+
 export function buildFlowGraph(input: BuildGraphInput): {
   nodes: BayFlowNode[]
   edges: BuiltInEdge[]
@@ -109,6 +151,7 @@ export function buildFlowGraph(input: BuildGraphInput): {
   const { layout, focus, advanced, selection, pending } = input
   const nodes: BayFlowNode[] = []
   const edges: BuiltInEdge[] = []
+  const mixPath = mixPathIds(input.trees, selection)
 
   for (let part = 0; part < input.trees.length; part++) {
     const meta = input.parts[part] ?? { name: `part ${part}`, instrument: 'synth', isDrums: false }
@@ -124,7 +167,7 @@ export function buildFlowGraph(input: BuildGraphInput): {
       position: { x: originRect.x, y: originRect.y },
       width: originRect.w,
       height: originRect.h,
-      ...STATIC_FLAGS,
+      ...CARD_FLAGS,
       data: {
         part,
         partName: meta.name,
@@ -153,7 +196,7 @@ export function buildFlowGraph(input: BuildGraphInput): {
           position: { x: rect.x, y: rect.y },
           width: rect.w,
           height: rect.h,
-          ...STATIC_FLAGS,
+          ...CARD_FLAGS,
           data: {
             part,
             variation: v,
@@ -168,7 +211,10 @@ export function buildFlowGraph(input: BuildGraphInput): {
             busy,
           },
         })
-        edges.push(makeEdge(parentId, v.id, v.hidden ? 'ghost' : undefined))
+        const cls = [edgeKindClass(v.provenance.kind)]
+        if (v.hidden) cls.push('ghost')
+        else if (mixPath.has(v.id)) cls.push('mix-path')
+        edges.push(makeEdge(parentId, v.id, cls.join(' ')))
         walk(n.children, v.id, depth + 1)
       }
     }
@@ -187,7 +233,7 @@ export function buildFlowGraph(input: BuildGraphInput): {
         position: { x: rect.x, y: rect.y },
         width: rect.w,
         height: rect.h,
-        ...STATIC_FLAGS,
+        ...PENDING_FLAGS,
         data: { mini },
       })
       edges.push(makeEdge(parent, id, 'pending'))

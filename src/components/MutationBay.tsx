@@ -40,6 +40,11 @@ import {
 import { BayFlowCanvas } from './bay/flow/BayFlowCanvas'
 import { buildFlowGraph } from './bay/flow/graph'
 import { layoutBay, originNodeId } from './bay/flow/layout'
+import {
+  loadBayPositions,
+  saveBayPositions,
+  type BayNodePositions,
+} from './bay/flow/nodePositions'
 
 function lineageChain(motif: Motif, motifs: Map<string, Motif>): Motif[] {
   const chain: Motif[] = [motif]
@@ -76,7 +81,13 @@ function lineageLabel(m: Motif): string {
     case 'genetic':
       return 'RIFF'
     case 'recorded':
-      return m.source.input === 'mic' ? 'MIC' : m.source.input === 'pencil' ? 'PENCIL' : 'PLAYED'
+      return m.source.input === 'mic'
+        ? 'MIC'
+        : m.source.input === 'pencil'
+          ? 'PENCIL'
+          : m.source.input === 'clip'
+            ? 'CLIP'
+            : 'PLAYED'
   }
 }
 
@@ -547,10 +558,33 @@ export function MutationBay({ source }: { source: Motif }) {
 
   // ---- the shared canvas: dagre layout → flow graph → context ----
 
-  const layout = useMemo(
-    () => layoutBay({ trees, showHidden, collapsedParts, pending }),
-    [trees, showHidden, collapsedParts, pending],
+  // Hand-dragged card positions override their dagre slot; persisted per
+  // source motif in localStorage (the bay remounts per source via its key).
+  const [draggedPositions, setDraggedPositions] = useState<BayNodePositions>(() =>
+    loadBayPositions(source.id),
   )
+
+  const layout = useMemo(() => {
+    const l = layoutBay({ trees, showHidden, collapsedParts, pending })
+    for (const [id, p] of Object.entries(draggedPositions)) {
+      const rect = l.positions.get(id)
+      if (rect) l.positions.set(id, { ...rect, x: p.x, y: p.y })
+    }
+    return l
+  }, [trees, showHidden, collapsedParts, pending, draggedPositions])
+
+  const onNodeDrag = (id: string, pos: { x: number; y: number }) =>
+    setDraggedPositions((prev) => ({ ...prev, [id]: pos }))
+  const onNodeDragStop = (id: string, pos: { x: number; y: number }) => {
+    // prune overrides for nodes that no longer exist (pruned takes, vanished
+    // pending parents) so the stored map can't grow stale entries
+    const next: BayNodePositions = {}
+    for (const [k, v] of Object.entries({ ...draggedPositions, [id]: pos })) {
+      if (layout.positions.has(k)) next[k] = v
+    }
+    setDraggedPositions(next)
+    saveBayPositions(source.id, next)
+  }
   const graph = useMemo(
     () =>
       buildFlowGraph({
@@ -706,8 +740,11 @@ export function MutationBay({ source }: { source: Motif }) {
             focusKey={`${effFocus.part}:${effFocus.nodeId ?? 'origin'}`}
             focusRect={layout.positions.get(effFocus.nodeId ?? originNodeId(effFocus.part)) ?? null}
             focusSource={focusSourceRef}
+            advOpen={advanced !== null}
             // pan/zoom moves the anchor under a fixed dropdown — close ADV
             onMoveStart={stableCallbacks.closeAdvanced}
+            onNodeDrag={onNodeDrag}
+            onNodeDragStop={onNodeDragStop}
           />
         </BayFlowProvider>
       </div>

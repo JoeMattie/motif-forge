@@ -1,9 +1,10 @@
 import '@xyflow/react/dist/style.css'
-import { useEffect, type RefObject } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 import {
   Background,
   BackgroundVariant,
   MiniMap,
+  Panel,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
@@ -39,8 +40,16 @@ interface CanvasProps {
   focusRect: NodeRect | null
   /** What moved the focus last; only keyboard moves pan the viewport. */
   focusSource: RefObject<'keyboard' | 'pointer'>
+  /** An ADV dropdown is open — suppress auto-fit so the programmatic pan
+   * doesn't fire onMoveStart and close it mid-chain. */
+  advOpen: boolean
   /** Pan/zoom start — the bay closes its ADV dropdown so it can't drift off its anchor. */
   onMoveStart: () => void
+  /** Card drag in flight — the bay mirrors the position into its override map
+   * so the controlled nodes prop follows the pointer. */
+  onNodeDrag: (id: string, pos: { x: number; y: number }) => void
+  /** Drag ended — the bay persists the override map to localStorage. */
+  onNodeDragStop: (id: string, pos: { x: number; y: number }) => void
 }
 
 /** Minimal translation along one axis that brings [pos, pos+size] inside
@@ -53,9 +62,37 @@ function nearestEdgeDelta(pos: number, size: number, span: number): number {
   return 0
 }
 
-function CanvasInner({ nodes, edges, focusKey, focusRect, focusSource, onMoveStart }: CanvasProps) {
+function CanvasInner({
+  nodes,
+  edges,
+  focusKey,
+  focusRect,
+  focusSource,
+  advOpen,
+  onMoveStart,
+  onNodeDrag,
+  onNodeDragStop,
+}: CanvasProps) {
   const flow = useReactFlow()
   const store = useStoreApi()
+
+  // Re-fit when a NEW take lands (mount is covered by the fitView prop), so
+  // fresh mutations never land off-screen. Selection changes, focus moves,
+  // and SHOW HIDDEN's ghost reveals keep the viewport where it is.
+  const prevTakeIds = useRef<Set<string> | null>(null)
+  useEffect(() => {
+    const ids = new Set<string>()
+    for (const n of nodes) if (n.type === 'take' && !n.data.ghost) ids.add(n.id)
+    const prev = prevTakeIds.current
+    prevTakeIds.current = ids
+    if (!prev || advOpen) return
+    for (const id of ids) {
+      if (!prev.has(id)) {
+        void flow.fitView({ padding: 0.25, maxZoom: 1, duration: 150 })
+        return
+      }
+    }
+  }, [nodes, advOpen, flow])
 
   // Focus follow (replaces the DOM tree's scrollIntoView): after a KEYBOARD
   // focus move, pan the viewport by the minimal translation that brings the
@@ -86,7 +123,8 @@ function CanvasInner({ nodes, edges, focusKey, focusRect, focusSource, onMoveSta
       nodes={nodes}
       edges={edges}
       nodeTypes={nodeTypes}
-      nodesDraggable={false}
+      // per-node flags decide draggability (cards yes, pending placeholders
+      // no) and restrict the grab surface to each card's .bay-drag-handle
       nodesConnectable={false}
       nodesFocusable={false}
       edgesFocusable={false}
@@ -106,14 +144,36 @@ function CanvasInner({ nodes, edges, focusKey, focusRect, focusSource, onMoveSta
       minZoom={0.4}
       maxZoom={1.5}
       fitView
-      fitViewOptions={{ padding: 0.15, maxZoom: 1 }}
+      fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
       onNodeClick={keepNodesClickable}
       onMoveStart={onMoveStart}
+      onNodeDrag={(_, n) => onNodeDrag(n.id, n.position)}
+      onNodeDragStop={(_, n) => onNodeDragStop(n.id, n.position)}
       // onlyRenderVisibleElements stays OFF: virtualization would unmount
       // open CLAUDE/ADV popovers mid-edit. It's the perf lever if trees grow.
     >
       <Background variant={BackgroundVariant.Dots} gap={22} size={1.5} />
       <MiniMap pannable zoomable />
+      {/* patch-cable color key — mirrors the edge classes in graph.ts */}
+      <Panel position="top-right" className="cable-legend">
+        <span className="cable-legend-title">Cable legend</span>
+        <span className="cable-legend-row">
+          <i className="cable-chip transform" />
+          Transform
+        </span>
+        <span className="cable-legend-row">
+          <i className="cable-chip llm" />
+          Claude
+        </span>
+        <span className="cable-legend-row">
+          <i className="cable-chip evolve" />
+          Evolve · Sound
+        </span>
+        <span className="cable-legend-row">
+          <i className="cable-chip pending" />
+          Pending
+        </span>
+      </Panel>
     </ReactFlow>
   )
 }

@@ -472,8 +472,8 @@ mark.hk,
   gap: 3px;
 }
 .rate-sq {
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
   border-radius: 2px;
   background: var(--surface);
   border: 1px solid var(--surface-border);
@@ -864,6 +864,50 @@ main {
   color: var(--label);
   text-transform: uppercase;
 }
+/* ---------- forge dock: GENERATE + NOODLE as one tabbed module ---------- */
+
+/* The tab row replaces the two panels' title buttons: hardware channel keys
+   along the module's top edge. Active tab = ink + accent underline; clicking
+   it again folds the dock to the active panel's summary strip. */
+.forge-tab-list {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 16px 0;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--label);
+}
+/* Vertical padding keeps the row as tall as the noodle-status chip, so the
+   LOOPING TAKE / ARMED badge popping in never shifts the layout. */
+.forge-tab-list .gen-summary {
+  padding: 5px 0;
+}
+.forge-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0 0 5px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--label-dim);
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+.forge-tab:hover {
+  color: var(--ink);
+}
+.forge-tab[data-active] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
 .gen-strip .gen-title,
 .gen-title {
   display: inline-flex;
@@ -1554,9 +1598,10 @@ main {
   text-transform: uppercase;
   white-space: nowrap;
 }
+/* in-use = kept, so the latched chip wears the green commit color */
 .promote-chip[data-promoted='true'] {
-  background: var(--chip-on-bg);
-  color: var(--chip-on-text);
+  background: var(--green);
+  color: #fff;
   border-color: transparent;
   font-weight: 700;
 }
@@ -2081,11 +2126,16 @@ main {
   flex-wrap: wrap;
 }
 
-/* the ADV dropdown: rows of part-scoped transform keys */
+/* the ADV dropdown: a hardware module — 3-col transform key grid + stepper.
+   !important beats the theme's inline Popover dropdown surface styles. */
 .advanced-pop {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  background: var(--module-bg) !important;
+  border: 1px solid var(--module-border) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--module-hl), var(--module-drop) !important;
 }
 /* -- the patch-panel canvas: ONE React Flow pane, one lane per part, dagre
    LR auto-layout (bay/flow/layout.ts mirrors these card sizes) -- */
@@ -2104,25 +2154,32 @@ main {
   --xy-edge-stroke: var(--faint);
   --xy-edge-stroke-selected: var(--accent);
   --xy-attribution-background-color: transparent;
-  --xy-minimap-background-color: var(--module-bg);
-  --xy-minimap-mask-background-color: color-mix(in srgb, var(--tray-bg) 55%, transparent);
-  --xy-minimap-node-background-color: var(--faint);
+  /* minimap = a little hardware scope: LCD glass, cream note blips */
+  --xy-minimap-background-color: var(--lcd-bg);
+  --xy-minimap-mask-background-color: color-mix(in srgb, var(--lcd-bg) 80%, transparent);
+  --xy-minimap-node-background-color: var(--note-lead);
   --xy-minimap-node-stroke-color: transparent;
 }
 .bay-canvas .react-flow__background circle {
   fill: var(--faint);
   opacity: 0.45;
 }
+/* patch cables: chunky rounded strokes, colored per mutation type by the
+   edge-* classes at the end of this file; in-mix paths go full opacity */
 .bay-canvas .react-flow__edge-path {
   stroke: var(--faint);
-  stroke-width: 1.5;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  opacity: 0.8;
 }
 /* hidden takes ghosted back in by SHOW HIDDEN keep dashed wiring */
 .bay-canvas .react-flow__edge.ghost .react-flow__edge-path {
   stroke-dasharray: 4 3;
   opacity: 0.5;
 }
+/* pending = an inbound Claude take: dashed orange cable */
 .bay-canvas .react-flow__edge.pending .react-flow__edge-path {
+  stroke: var(--accent);
   stroke-dasharray: 4 3;
 }
 /* invisible plumbing — edges need handles, users don't */
@@ -2147,7 +2204,7 @@ main {
 }
 .bay-canvas .react-flow__minimap {
   border: 1px solid var(--module-border);
-  border-radius: 8px;
+  border-radius: 6px;
   overflow: hidden;
 }
 
@@ -2263,11 +2320,17 @@ main {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* badge colors match the take's cable: transform green, Claude orange,
+   evolve/sound yellow (see the edge-* rules at the end of this file) */
 .node-badge.transform {
   color: var(--green);
 }
-.node-badge.sound {
+.node-badge.llm {
   color: var(--accent);
+}
+.node-badge.ga,
+.node-badge.sound {
+  color: var(--cable-evolve-text);
 }
 .node-foot {
   display: flex;
@@ -2309,8 +2372,9 @@ main {
   color: var(--accent);
   font-weight: 700;
 }
+/* promote = commit/keep, so it wears green; orange is reserved for creation */
 .promote-big {
-  background: var(--accent);
+  background: var(--green);
   color: #fff;
   border: none;
   border-radius: 9px;
@@ -2321,7 +2385,7 @@ main {
   text-transform: uppercase;
   font-size: 11px;
   cursor: pointer;
-  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.25), 0 4px 14px rgba(241, 77, 14, 0.35);
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.25), 0 4px 14px rgba(59, 160, 126, 0.35);
 }
 .promote-big:active {
   transform: translateY(2px);
@@ -2591,6 +2655,12 @@ main {
   display: flex;
   flex-direction: column;
 }
+/* the shell is click-focusable (tabIndex -1) so space can play/pause the
+   take — but it must never paint a focus ring like a form control would */
+.noodle-panel:focus,
+.noodle-strip:focus {
+  outline: none;
+}
 .noodle-module {
   display: flex;
   flex-direction: column;
@@ -2729,4 +2799,318 @@ main {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* ---------- polish pass: triage grid (B) ---------- */
+
+/* B1: wide views — auto-fill counts columns by the 380px track max, which
+   leaves a dead ~270px right rail at ~1440px. From 1400px on, count by a
+   330px minimum instead so four ~330–360px cards share the row (five at
+   ultra-wide), matching the design mock's 4-up at 1480. */
+@container view (min-width: 1400px) {
+  .motif-grid {
+    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  }
+}
+
+/* B2: unfilled rating squares are near-invisible on Nite card backgrounds —
+   --faint is one step lighter than --surface-border on that theme. */
+:root[data-theme='nite'] .rate-sq {
+  border-color: var(--faint);
+  background: rgba(255, 255, 255, 0.04);
+}
+:root[data-theme='nite'] .rate-sq[data-filled='true'] {
+  background: var(--chip-on-bg);
+  border-color: transparent;
+}
+
+/* ---------- polish pass: generate panel (A) ---------- */
+
+/* A2: once a run drains, the full-width progress strip collapses to a quiet
+   LCD status chip (same idiom as .noodle-status). Success chips fade out via
+   .faded ~6s later; failure chips keep the danger color and never fade. */
+.gen-progress-chip {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: var(--lcd-bg);
+  color: var(--note-harmony);
+  border-radius: 4px;
+  padding: 3px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  transition: opacity 400ms ease;
+}
+.gen-progress-chip.failed {
+  color: var(--danger);
+  /* error text can carry case-significant detail — no uppercasing */
+  text-transform: none;
+}
+.gen-progress-chip.faded {
+  opacity: 0;
+}
+
+/* A4: replacement line shown when the selected engine can't read the brief */
+.gen-brief-off {
+  color: var(--faint);
+}
+/* a set concept still shows as a plain inert chip while the inputs are hidden */
+.gen-concept-chip {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  height: 24px;
+  line-height: 22px;
+  padding: 0 10px;
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  border-radius: 7px;
+  color: var(--ink);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+/* A5: a mandatory (locked) LEAD chip reads as latched-dark, not disabled —
+   the lock glyph replaces the check, so it can't be confused with the dim
+   "engine ignores this" treatment on truly inert chips. */
+.gen-chip[data-locked] .wb-chip-label[data-disabled] {
+  opacity: 1;
+  background: var(--chip-on-bg);
+  border-color: var(--chip-on-bg);
+  color: var(--chip-on-text);
+  font-weight: 700;
+  padding: 0 9px 0 6px;
+}
+
+/* ---------- polish pass: noodle panel (C) ---------- */
+
+/* C3: count-in caption stacked over its 1|2 switch (gen-ctl idiom) */
+.noodle-countin {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* C4: REC key states — neutral hardware key at idle, red while live.
+   Armed blinks slowly (waiting for the first note); recording is steady. */
+.wb-btn[data-rec-state='armed'],
+.wb-btn[data-rec-state='recording'] {
+  background: var(--danger);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 3px 0 color-mix(in srgb, var(--danger) 60%, black);
+}
+.wb-btn[data-rec-state='armed'] {
+  animation: noodle-arm-blink 1.4s ease-in-out infinite;
+}
+@keyframes noodle-arm-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* C5: bar-number micro ruler — sticky against vertical scroll (the velocity
+   lane's trick, top edge), scrolls horizontally with the material. The .lcd
+   svg absolutizer is overridden the same way as the roll/vel surfaces. */
+.noodle-roll svg.noodle-ruler {
+  position: sticky;
+  inset: auto;
+  top: 0;
+  display: block;
+  height: auto;
+  background: var(--lcd-deep);
+}
+.noodle-ruler-label {
+  fill: var(--lcd-dim);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 7px;
+  user-select: none;
+  pointer-events: none;
+}
+.noodle-ruler-edge {
+  stroke: var(--lcd-grid);
+  stroke-width: 1;
+}
+
+/* C6: live capture ring on the roll shell (armed or recording) */
+.noodle-roll-shell[data-live] {
+  box-shadow:
+    0 0 0 2px var(--danger),
+    0 0 12px color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+/* ---------- polish pass: mutation bay (D) ---------- */
+
+/* D1 cable palette — accent constants shared by both themes (green/orange
+   reuse the existing accent tokens; yellow is new). The -text variant darkens
+   in Day so 8.5px badges stay legible on the module surface. */
+:root {
+  --cable-evolve: #e8b23c;
+  --cable-evolve-text: #c98f1a;
+}
+:root[data-theme='nite'] {
+  --cable-evolve-text: #e8b23c;
+}
+
+/* D1: patch cables colored by the CHILD take's provenance (graph.ts) */
+.bay-canvas .react-flow__edge.edge-transform .react-flow__edge-path {
+  stroke: var(--green);
+}
+.bay-canvas .react-flow__edge.edge-llm .react-flow__edge-path {
+  stroke: var(--accent);
+}
+.bay-canvas .react-flow__edge.edge-evolve .react-flow__edge-path {
+  stroke: var(--cable-evolve);
+}
+/* the in-mix signal path reads at full strength */
+.bay-canvas .react-flow__edge.mix-path .react-flow__edge-path {
+  opacity: 1;
+  stroke-width: 3;
+}
+
+/* D1: cable legend — a small module-bg card in the canvas corner */
+.bay-canvas .cable-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 10px;
+  padding: 9px 11px;
+  background: var(--module-bg);
+  border: 1px solid var(--module-border);
+  border-radius: 10px;
+  box-shadow: var(--module-hl), var(--module-drop);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--label-dim);
+  pointer-events: none;
+}
+.cable-legend-title {
+  letter-spacing: 0.16em;
+  font-weight: 600;
+  color: var(--faint);
+}
+.cable-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.cable-chip {
+  display: block;
+  width: 22px;
+  height: 4px;
+  border-radius: 2px;
+}
+.cable-chip.transform {
+  background: var(--green);
+}
+.cable-chip.llm {
+  background: var(--accent);
+}
+.cable-chip.evolve {
+  background: var(--cable-evolve);
+}
+.cable-chip.pending {
+  background: repeating-linear-gradient(90deg, var(--accent) 0 4px, transparent 4px 8px);
+}
+
+/* D2: take-card header — name left, type badge right (badge colors live with
+   the .node-badge rules in the bay card section above) */
+.node-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* D3: ADV dropdown internals — the mock's 3-col hardware key grid and the
+   compact transpose stepper (surface overrides live on .advanced-pop above) */
+.transform-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+}
+.transform-grid .wb-btn {
+  width: 100%;
+  padding-inline: 4px;
+}
+.step-ctl {
+  display: inline-flex;
+  align-items: stretch;
+  margin-left: auto;
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.step-key {
+  width: 24px;
+  padding: 4px 0;
+  border: none;
+  background: var(--module-bg);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+.step-key:active {
+  background: var(--tray-bg);
+}
+.step-key:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.step-val {
+  min-width: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--surface-border);
+  border-right: 1px solid var(--surface-border);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10.5px;
+  color: var(--ink);
+}
+.step-label {
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--label-dim);
+}
+
+/* D4: minimap glass — inset LCD shadow painted over the scope */
+.bay-canvas .react-flow__minimap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+/* Cards drag by their header row; positions persist per source motif. */
+.bay-drag-handle {
+  cursor: grab;
+}
+.react-flow__node.dragging .bay-drag-handle {
+  cursor: grabbing;
 }

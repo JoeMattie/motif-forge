@@ -198,7 +198,7 @@ export function TriageGrid() {
           <Kbd>← → ↑ ↓</Kbd> nav · <Kbd>space</Kbd> play · <Kbd>1–5</Kbd> rate ·{' '}
           <Kbd>x</Kbd> discard · <Mark className="hk">u</Mark>ndo ·{' '}
           <Mark className="hk">f</Mark>old out · <Kbd>↵</Kbd> use ·{' '}
-          <Mark className="hk">m</Mark>utate
+          <Mark className="hk">m</Mark>utate · <Mark className="hk">n</Mark>oodle
         </span>
       </div>
       {visible.length === 0 && state.pending.length === 0 ? (

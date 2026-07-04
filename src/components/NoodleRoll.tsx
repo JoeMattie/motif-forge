@@ -32,13 +32,17 @@ interface NoodleRollProps {
   grid: number
   /** LOCK: shade in-scale rows and snap penciled/dragged pitches into key. */
   lock: boolean
-  height?: number
+  /** Armed/recording — paints a red ring on the shell. */
+  live?: boolean
 }
 
-const PPR = 9 // px per semitone row
+// px per semitone row — sized so the FULL 36–96 range is always visible
+// (61 rows ≈ 244px): the roll never scrolls vertically.
+const PPR = 4
 const ROWS = NOODLE_PITCH_MAX - NOODLE_PITCH_MIN + 1
 const EDGE_PX = 6 // resize handle width on note edges
 const VEL_H = 42 // velocity lane height
+const RULER_H = 12 // bar-number ruler height (sticky top)
 const MIN_PPB = 20
 const MAX_PPB = 140
 
@@ -60,15 +64,16 @@ const BLACK = new Set([1, 3, 6, 8, 10])
 
 /**
  * The Noodle panel's editable piano roll: an LCD-skinned SVG in fixed
- * pixel-per-beat / pixel-per-row coordinates (fixed viewport with scroll, not
- * auto-fit). Gestures follow the ryohey/signal blueprint: pencil creates with
+ * pixel-per-beat / pixel-per-row coordinates (horizontal scroll only — the
+ * full pitch range always fits vertically, see PPR).
+ * Gestures follow the ryohey/signal blueprint: pencil creates with
  * the last-used duration (quantizeFloor), note bodies move, edges resize,
  * empty space marquees in select mode, alt-click deletes; velocity lives in a
  * slim lane docked under the roll. All edits go straight to the take store —
  * one undo snapshot per gesture. The playhead is a rAF-driven line (engine
  * loop position, or the recorder's pass position while capturing).
  */
-export function NoodleRoll({ tool, snap, grid, lock, height = 264 }: NoodleRollProps) {
+export function NoodleRoll({ tool, snap, grid, lock, live = false }: NoodleRollProps) {
   const take = useSyncExternalStore(subscribeTake, getTake)
   const bpb = beatsPerBar(take.timeSig)
   const totalBeats = take.bars * bpb
@@ -106,16 +111,6 @@ export function NoodleRoll({ tool, snap, grid, lock, height = 264 }: NoodleRollP
       return next.size === sel.size ? sel : next
     })
   }, [take.notes.length])
-
-  // Center the viewport around the material (or middle C) on mount.
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    const pitches = getTake().notes.map((n) => n.pitch)
-    const mid =
-      pitches.length > 0 ? pitches.reduce((a, b) => a + b, 0) / pitches.length : 62
-    el.scrollTop = Math.max(0, (NOODLE_PITCH_MAX - mid) * PPR - el.clientHeight / 2)
-  }, [])
 
   const toBeatPitch = useCallback(
     (e: { clientX: number; clientY: number }) => {
@@ -426,6 +421,14 @@ export function NoodleRoll({ tool, snap, grid, lock, height = 264 }: NoodleRollP
     return lines
   }, [grid, totalBeats, bpb, ppb])
 
+  const barNumbers = useMemo(() => {
+    const labels: { x: number; text: string }[] = []
+    for (let bar = 0; bar < take.bars; bar++) {
+      labels.push({ x: bar * bpb * ppb + 3, text: String(bar + 1) })
+    }
+    return labels
+  }, [take.bars, bpb, ppb])
+
   const octaveLabels = useMemo(() => {
     const labels: { y: number; text: string }[] = []
     for (let p = NOODLE_PITCH_MIN; p <= NOODLE_PITCH_MAX; p++) {
@@ -437,10 +440,39 @@ export function NoodleRoll({ tool, snap, grid, lock, height = 264 }: NoodleRollP
   }, [])
 
   return (
-    // biome-ignore lint/a11y/noNoninteractiveTabindex: the roll is a keyboard-editable surface — Delete/Escape/⌘Z act on the selection
-    <div className="noodle-roll-shell" tabIndex={0} onKeyDown={onKeyDown}>
-      <div className="noodle-roll lcd" style={{ height }} ref={scrollRef}>
+    <div
+      className="noodle-roll-shell"
+      data-live={live || undefined}
+      // biome-ignore lint/a11y/noNoninteractiveTabindex: the roll is a keyboard-editable surface — Delete/Escape/⌘Z act on the selection
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+    >
+      <div
+        className="noodle-roll lcd"
+        style={{ height: RULER_H + rollH + VEL_H }}
+        ref={scrollRef}
+      >
         <div className="noodle-roll-inner" style={{ width, minWidth: '100%' }}>
+          <svg
+            role="img"
+            aria-label="Bar ruler"
+            width="100%"
+            height={RULER_H}
+            className="noodle-ruler"
+          >
+            {barNumbers.map((l) => (
+              <text key={l.x} x={l.x} y={RULER_H - 3} className="noodle-ruler-label">
+                {l.text}
+              </text>
+            ))}
+            <line
+              x1={0}
+              x2="100%"
+              y1={RULER_H - 0.5}
+              y2={RULER_H - 0.5}
+              className="noodle-ruler-edge"
+            />
+          </svg>
           <svg
             ref={rollRef}
             role="img"

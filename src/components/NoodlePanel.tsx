@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { Button, NumberInput, SegmentedControl, Select, Tooltip } from '@mantine/core'
+import { Button, NumberInput, Popover, SegmentedControl, Select, Tooltip } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
-import { CaretDownIcon, CaretRightIcon, MicrophoneIcon } from '@phosphor-icons/react'
+import { MicrophoneIcon } from '@phosphor-icons/react'
 import type { Mode, Note } from '../types'
 import { MODES } from '../core/theory'
 import { engine } from '../audio/engine'
@@ -29,6 +29,7 @@ import {
   replaceMaterial,
   setNotes,
   setTakeMeta,
+  subscribeReveal,
   subscribeTake,
   takeMotif,
   takeTotalBeats,
@@ -74,6 +75,7 @@ import {
   transcribeBasicPitch,
 } from '../noodle/transcribe/basicPitch/client'
 import { BP_ANNOTATIONS_FPS } from '../noodle/transcribe/basicPitch/postprocess'
+import { isTypingTarget } from './hooks/useKeyboardTriage'
 import { usePlayOptions } from './hooks/usePlayOptions'
 import { CircleOfFifths } from './hw/CircleOfFifths'
 import { HardToggle } from './hw/HardToggle'
@@ -98,6 +100,7 @@ function originLabel(input: string, method?: string): string {
   if (input === 'midi') return 'played on MIDI'
   if (input === 'keys') return 'played on musical typing'
   if (input === 'mic') return `sung/played into the mic (${method ?? 'voice'})`
+  if (input === 'clip') return 'a pool clip, hand-edited in the roll'
   return 'penciled into the roll'
 }
 
@@ -205,10 +208,59 @@ function InstStrip() {
   )
 }
 
-export function NoodlePanel() {
+/** Take summary + live status chip. Rendered by the ForgeDock directly right
+ * of the tabs (not by the panel) so it never costs the panel a row and stays
+ * visible while the dock is folded — the live indication survives collapse. */
+export function NoodleSummary() {
+  const take = useSyncExternalStore(subscribeTake, getTake)
+  const recorder = useSyncExternalStore(subscribeRecorder, getRecorderSnapshot)
+  const mic = useSyncExternalStore(subscribeMic, getMicSnapshot)
+  const playing =
+    useSyncExternalStore(engine.subscribe, () => engine.getSnapshot().playingMotifId) ===
+    NOODLE_TAKE_ID
+  const captureActive = recorder.state !== 'idle' || mic.state !== 'idle'
+
+  const status = captureActive
+    ? recorder.state === 'armed'
+      ? `ARMED (${recorder.input?.toUpperCase()}) — play a note to start · loops ${take.bars} bars`
+      : recorder.state === 'recording'
+        ? 'RECORDING — loop overdubbing · REC again to stop'
+        : mic.status
+    : playing
+      ? 'LOOPING TAKE'
+      : ''
+
+  return (
+    <>
+      <span className="gen-summary">
+        {`${take.key} ${take.mode.toUpperCase()} · ${take.tempo} BPM · ${take.bars} BARS · ${take.notes.length} NOTES${take.drums ? ' · KIT' : ''}`}
+      </span>
+      {status && <span className={`noodle-status${captureActive ? ' live' : ''}`}>{status}</span>}
+    </>
+  )
+}
+
+/** NOODLE tab content — the ForgeDock owns the module shell, the tab header,
+ * the summary/status chip (right of the tabs), and the open/collapsed state
+ * (and switches to this tab on N-hotkey loads). */
+export function NoodlePanel({ open }: { open: boolean }) {
   const dispatch = useAppDispatch()
   const playOpts = usePlayOptions()
-  const [open, setOpen] = useState(false)
+  const shellRef = useRef<HTMLDivElement>(null)
+
+  // The N hotkey loads a pool clip into the take — the dock has already
+  // switched to this tab; scroll the roll into view and take focus so space
+  // plays the take right away.
+  useEffect(
+    () =>
+      subscribeReveal(() => {
+        requestAnimationFrame(() => {
+          shellRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+          shellRef.current?.focus({ preventScroll: true })
+        })
+      }),
+    [],
+  )
 
   const take = useSyncExternalStore(subscribeTake, getTake)
   const recorder = useSyncExternalStore(subscribeRecorder, getRecorderSnapshot)
@@ -232,6 +284,7 @@ export function NoodlePanel() {
   const [minLenMs] = useNoodleBpMinLenMs()
   const [tool, setTool] = useState<NoodleTool>('pencil')
   const [keysInput, setKeysInput] = useState(!midi.supported)
+  const [advOpen, setAdvOpen] = useState(false)
 
   const grid = gridBeats(gridId as GridId)
   const totalBeats = takeTotalBeats(take)
@@ -280,6 +333,17 @@ export function NoodlePanel() {
     const m = takeMotif()
     if (m.notes.length === 0) return
     engine.play(m, playOpts(m, { loop: true }))
+  }
+
+  // Space plays/pauses the TAKE while focus sits inside the panel — tabIndex
+  // on the shell makes any click in it (roll included) land focus here.
+  // stopPropagation keeps the triage listener from also playing the selected
+  // card; preventDefault stops a still-focused key from re-clicking.
+  const onShellKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== ' ' || isTypingTarget(e.target) || captureActive) return
+    e.preventDefault()
+    e.stopPropagation()
+    toggleLoop()
   }
 
   const toggleRec = () => {
@@ -402,25 +466,14 @@ export function NoodlePanel() {
     notifications.show({ message: `“${motif.name}” added to the pool`, color: 'forge' })
   }
 
-  const status = captureActive
-    ? recorder.state === 'armed'
-      ? `ARMED (${recorder.input?.toUpperCase()}) — play a note to start · loops ${take.bars} bars`
-      : recorder.state === 'recording'
-        ? 'RECORDING — loop overdubbing · REC again to stop'
-        : mic.status
-    : playing
-      ? 'LOOPING TAKE'
-      : ''
-
-  const summary = `${take.key} ${take.mode.toUpperCase()} · ${take.tempo} BPM · ${take.bars} BARS · ${take.notes.length} NOTES${take.drums ? ' · KIT' : ''}`
-
   if (!open) {
     return (
-      <section className="module gen-strip noodle-strip">
-        <button type="button" className="gen-title" onClick={() => setOpen(true)}>
-          Noodle <CaretRightIcon size={10} />
-        </button>
-        <span className="gen-summary">{summary}</span>
+      <div
+        className="gen-strip noodle-strip"
+        ref={shellRef}
+        tabIndex={-1}
+        onKeyDown={onShellKeyDown}
+      >
         <span className="spacer" />
         <PlayRound size="md" playing={playing} loading={playing && loading} onClick={toggleLoop} />
         <Tooltip label="Commit the staged take to the triage pool as a fresh family">
@@ -428,19 +481,12 @@ export function NoodlePanel() {
             Add to pool
           </Button>
         </Tooltip>
-      </section>
+      </div>
     )
   }
 
   return (
-    <section className="module noodle-panel">
-      <div className="gen-strip" style={{ paddingBottom: 0 }}>
-        <button type="button" className="gen-title" onClick={() => setOpen(false)}>
-          Noodle <CaretDownIcon size={10} />
-        </button>
-        <span className="gen-summary">{summary}</span>
-        {status && <span className={`noodle-status${captureActive ? ' live' : ''}`}>{status}</span>}
-      </div>
+    <div className="noodle-panel" ref={shellRef} tabIndex={-1} onKeyDown={onShellKeyDown}>
       <div className="noodle-module">
         <div className="noodle-controls">
           <div className="gen-ctl">
@@ -477,8 +523,7 @@ export function NoodlePanel() {
                 }
               >
                 <Button
-                  data-danger={recorder.state !== 'idle'}
-                  className="danger-text"
+                  data-rec-state={recorder.state}
                   disabled={!keysInput && (!midi.supported || midi.devices.length === 0)}
                   onClick={toggleRec}
                 >
@@ -506,7 +551,7 @@ export function NoodlePanel() {
                 }
               >
                 <Button
-                  data-danger={mic.state !== 'idle'}
+                  data-rec-state={mic.state !== 'idle' ? 'recording' : 'idle'}
                   leftSection={<MicrophoneIcon size={12} />}
                   onClick={recordMic}
                 >
@@ -514,32 +559,53 @@ export function NoodlePanel() {
                 </Button>
               </Tooltip>
               <Tooltip label="Count-in bars of click before the mic window opens">
-                <NumberInput
-                  w={54}
-                  size="xs"
-                  min={1}
-                  max={2}
-                  value={countIn}
-                  onChange={(v) => {
-                    const n = Number(v)
-                    if (n === 1 || n === 2) setCountIn(n)
-                  }}
-                />
+                <div className="noodle-countin">
+                  <span className="knob-label">count-in</span>
+                  <SegmentedControl
+                    value={String(countIn)}
+                    onChange={(v) => {
+                      const n = Number(v)
+                      if (n === 1 || n === 2) setCountIn(n)
+                    }}
+                    data={['1', '2']}
+                  />
+                </div>
               </Tooltip>
-              <Tooltip label="Latency compensation (ms): shifts the transcription earlier to cancel the output-click + mic-input delay. Raise it if takes land late against the click">
-                <NumberInput
-                  w={64}
-                  size="xs"
-                  min={0}
-                  max={400}
-                  step={10}
-                  value={latencyMs}
-                  onChange={(v) => {
-                    const n = Number(v)
-                    if (Number.isFinite(n) && n >= 0) setLatencyMs(Math.round(n))
-                  }}
-                />
-              </Tooltip>
+              <Popover
+                opened={advOpen}
+                onChange={setAdvOpen}
+                width={190}
+                position="bottom-end"
+              >
+                <Popover.Target>
+                  {/* wrapper span so the tooltip still hovers around the anchor (AdvancedPop pattern) */}
+                  <span className="chip-tip-wrap">
+                    <Tooltip label="Advanced mic settings — latency compensation">
+                      <Button data-latched={advOpen} onClick={() => setAdvOpen((o) => !o)}>
+                        Adv
+                      </Button>
+                    </Tooltip>
+                  </span>
+                </Popover.Target>
+                <Popover.Dropdown className="advanced-pop">
+                  <span className="knob-label">latency</span>
+                  <Tooltip label="Latency compensation (ms): shifts the transcription earlier to cancel the output-click + mic-input delay. Raise it if takes land late against the click">
+                    <NumberInput
+                      w={96}
+                      size="xs"
+                      min={0}
+                      max={400}
+                      step={10}
+                      suffix=" ms"
+                      value={latencyMs}
+                      onChange={(v) => {
+                        const n = Number(v)
+                        if (Number.isFinite(n) && n >= 0) setLatencyMs(Math.round(n))
+                      }}
+                    />
+                  </Tooltip>
+                </Popover.Dropdown>
+              </Popover>
             </div>
           </div>
           <div className="gen-divider" />
@@ -554,14 +620,19 @@ export function NoodlePanel() {
             </Tooltip>
           </div>
           <div className="gen-ctl">
-            <span className="knob-label">mode</span>
             <Tooltip label="Scale flavor for LOCK / in-scale row shading">
-              <SegmentedControl
-                orientation="vertical"
-                value={take.mode}
-                onChange={(v) => setTakeMeta({ mode: v as Mode })}
-                data={MODES.map((m) => ({ value: m, label: MODE_SHORT[m] }))}
-              />
+              <div>
+                <Knob
+                  label="mode"
+                  value={MODE_SHORT[take.mode]}
+                  position={MODES.indexOf(take.mode) / (MODES.length - 1)}
+                  onPosition={(p) =>
+                    setTakeMeta({ mode: MODES[Math.round(p * (MODES.length - 1))] })
+                  }
+                  detents={MODES.length}
+                  variant="light"
+                />
+              </div>
             </Tooltip>
           </div>
           <div className="gen-divider" />
@@ -627,7 +698,10 @@ export function NoodlePanel() {
           </div>
         </div>
         {micMode === 'inst' && <InstStrip />}
-        <NoodleRoll tool={tool} snap={snap} grid={grid} lock={lock} />
+        <NoodleRoll tool={tool} snap={snap} grid={grid} lock={lock} live={captureActive} />
+        <span className="kbd-legend">
+          pencil draws · select drags marquee · alt-click deletes · z/x octave
+        </span>
         <div className="noodle-transport">
           <Tooltip label="Loop the staged take (edits swap in without dropping the beat)">
             <PlayRound playing={playing} loading={playing && loading} onClick={toggleLoop} />
@@ -662,6 +736,6 @@ export function NoodlePanel() {
           </Tooltip>
         </div>
       </div>
-    </section>
+    </div>
   )
 }

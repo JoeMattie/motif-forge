@@ -114,11 +114,12 @@ export type MotifSource =
       voicing?: 'chords' | 'both'
     }
   /** Joe's own material from the Noodle panel: recorded via Web MIDI or
-   * musical typing, transcribed from the mic (method says how), or penciled
-   * straight into the roll. Always a fresh family root. */
+   * musical typing, transcribed from the mic (method says how), penciled
+   * straight into the roll, or a pool clip loaded for hand-editing (N key).
+   * Always a fresh family root. */
   | {
       kind: 'recorded'
-      input: 'midi' | 'keys' | 'mic' | 'pencil'
+      input: 'midi' | 'keys' | 'mic' | 'pencil' | 'clip'
       method?: 'voice' | 'beats' | 'basic-pitch'
     }
 

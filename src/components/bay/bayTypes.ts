@@ -19,3 +19,31 @@ export function provenanceLabel(v: PartVariation): string {
   }
   return v.provenance.kind === 'ga' ? 'EVO' : 'VAR'
 }
+
+/** Take-card header title: what made this take, in words (truncated by CSS). */
+export function takeName(v: PartVariation): string {
+  switch (v.provenance.kind) {
+    case 'llm':
+      return v.provenance.brief
+    case 'ga':
+      return v.provenance.ops.split('+').join(' · ') || 'evolved'
+    case 'transform':
+      return v.provenance.transform
+    case 'sound':
+      return v.provenance.instrument
+  }
+}
+
+/** Take-card header type badge, colored to match its cable (styles.css .node-badge). */
+export function takeBadge(v: PartVariation): string {
+  switch (v.provenance.kind) {
+    case 'llm':
+      return 'CLAUDE'
+    case 'ga':
+      return 'VAR · EVO'
+    case 'sound':
+      return 'SOUND'
+    case 'transform':
+      return provenanceLabel(v)
+  }
+}

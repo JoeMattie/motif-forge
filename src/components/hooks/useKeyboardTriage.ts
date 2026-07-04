@@ -1,9 +1,27 @@
 import { useEffect, useRef } from 'react'
+import { notifications } from '@mantine/notifications'
 import type { Motif, Rating } from '../../types'
 import { engine } from '../../audio/engine'
 import { verticalTarget } from '../../core/gridNav'
+import { getTake, loadClip } from '../../noodle/takeStore'
 import { effectiveTempo } from '../../store/appState'
 import { useAppDispatch, useAppStateGetter } from '../../store/AppContext'
+
+/** N — load the cursor motif into the Noodle roll for hand-editing, asking
+ * first when it would clobber a staged take. */
+function loadIntoNoodle(m: Motif): void {
+  const staged = getTake()
+  if (
+    staged.notes.length > 0 &&
+    !window.confirm(
+      `Load “${m.name}” into Noodle? The staged take (${staged.notes.length} note${staged.notes.length === 1 ? '' : 's'}) will be replaced — UNDO brings it back.`,
+    )
+  ) {
+    return
+  }
+  loadClip(m)
+  notifications.show({ message: `“${m.name}” loaded into Noodle`, color: 'forge' })
+}
 
 /**
  * Only text-entry controls count as typing targets. Mantine renders many
@@ -38,6 +56,7 @@ export interface TriageKeyHandlers {
  * Global keyboard triage: arrows navigate, space toggles playback,
  * 1-5 rates (+advance), x discards (+advance), u restores last discard,
  * f folds out the family tray, m opens the mutation bay,
+ * n loads the cursor motif into the Noodle roll,
  * Enter toggles the cursor motif as its family's face (USE).
  * Selection is app state, not DOM focus.
  *
@@ -146,6 +165,9 @@ export function useKeyboardTriage(
           case 'm':
             if (onMutate) onMutate(trayCurrent)
             break
+          case 'n':
+            loadIntoNoodle(trayCurrent)
+            break
           case 'Enter':
             // preventDefault so a still-focused button doesn't also re-click
             e.preventDefault()
@@ -244,6 +266,9 @@ export function useKeyboardTriage(
         }
         case 'm':
           if (current && onMutate) onMutate(current)
+          break
+        case 'n':
+          if (current) loadIntoNoodle(current)
           break
         case 'Enter':
           e.preventDefault()

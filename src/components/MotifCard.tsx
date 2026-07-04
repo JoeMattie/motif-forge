@@ -93,26 +93,26 @@ export const MotifCard = memo(function MotifCard({
         </span>
       </div>
       <LcdRoll motif={face} muted={discarded} />
-      
-        <div className="part-legend">
-          {face.parts.length > 1 &&
-            face.parts.map((p, i) => (
-              <Tooltip key={i} label={p.preset ? `${p.name}: ${p.preset.oscillator} synth` : `${p.name} · ${p.instrument}`}>
-                <span>
-                  <i className={`part-swatch ${p.instrument === 'drums' ? 'drums' : `part-${i}`}`} />
-                  {partCode(p)}
-                </span>
-              </Tooltip>
-            ))}
-          {face.scaleWarning && (
-            <Tooltip label="Contains out-of-scale pitches">
-              <span className="chr-chip" style={{ marginLeft: 'auto' }}>
-                CHR
+      {/* Always rendered (empty on single-part motifs) so cards in a row keep
+          equal heights; the CHR chip lives here in all cases. */}
+      <div className="part-legend">
+        {face.parts.length > 1 &&
+          face.parts.map((p, i) => (
+            <Tooltip key={i} label={p.preset ? `${p.name}: ${p.preset.oscillator} synth` : `${p.name} · ${p.instrument}`}>
+              <span>
+                <i className={`part-swatch ${p.instrument === 'drums' ? 'drums' : `part-${i}`}`} />
+                {partCode(p)}
               </span>
             </Tooltip>
-          )}
-        </div>
-      
+          ))}
+        {face.scaleWarning && (
+          <Tooltip label="Contains out-of-scale pitches">
+            <span className="chr-chip" style={{ marginLeft: 'auto' }}>
+              CHR
+            </span>
+          </Tooltip>
+        )}
+      </div>
       {discarded ? (
         <div className="card-footer">
           <span className="discard-chip">

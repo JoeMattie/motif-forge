@@ -11,7 +11,7 @@ import {
   Tooltip,
 } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
-import { CaretDownIcon, CaretRightIcon, DiceFiveIcon } from '@phosphor-icons/react'
+import { DiceFiveIcon, LockSimpleIcon } from '@phosphor-icons/react'
 import type { GenerationBrief, InstantSpec, Mode, Motif, SynthPreset, Voicing } from '../types'
 import { MODES } from '../core/theory'
 import { generateBatch } from '../api/generate'
@@ -184,10 +184,11 @@ function useGenerationRun(pending: PendingBatch[]): GenRun | null {
   return run
 }
 
-/** LCD progress strip docked under the module: batch progress while generating
- *  (showing the engine's live technical step from the activity channel when
- *  one is reported), the result message once the run drains. Hidden until the
- *  first run. */
+/** LCD progress strip docked under the module: full-width batch progress while
+ *  generating (showing the engine's live technical step from the activity
+ *  channel when one is reported); once the run drains it collapses to a quiet
+ *  LCD status chip — success auto-fades after a few seconds, failures stay.
+ *  Hidden until the first run. */
 function GenProgress({
   run,
   pending,
@@ -198,18 +199,32 @@ function GenProgress({
   message: string | null
 }) {
   const steps = useSyncExternalStore(subscribeSteps, getSteps)
+  const running = run !== null && run.done < run.total
+  const failed = run !== null && !running && message !== null && /failed|not ready/i.test(message)
+  // Success chips fade out (opacity transition) ~6s after the run drains;
+  // failure chips stay until the next run.
+  const [faded, setFaded] = useState(false)
+  useEffect(() => {
+    setFaded(false)
+    if (run === null || running || failed) return
+    const t = window.setTimeout(() => setFaded(true), 6000)
+    return () => window.clearTimeout(t)
+  }, [run, running, failed])
   if (!run) return null
-  const running = run.done < run.total
-  const failed = !running && message !== null && /failed|not ready/i.test(message)
-  const width = running ? Math.max(8, Math.round((run.done / run.total) * 100)) : 100
+  if (!running) {
+    return (
+      <span className={`gen-progress-chip${failed ? ' failed' : ''}${faded ? ' faded' : ''}`}>
+        {failed ? '✕' : '✓'} {message ?? 'DONE'}
+      </span>
+    )
+  }
+  const width = Math.max(8, Math.round((run.done / run.total) * 100))
   const current = pending[0]
   const step = current ? steps[current.id] : undefined
   // Formatted explicitly (no CSS uppercasing) so labels like "Eb dorian" keep their case.
-  const text = running
-    ? `GENERATING${run.total > 1 ? ` ${run.done + 1}/${run.total}` : ''} — ${step ?? current?.label ?? ''}`
-    : (message ?? 'DONE')
+  const text = `GENERATING${run.total > 1 ? ` ${run.done + 1}/${run.total}` : ''} — ${step ?? current?.label ?? ''}`
   return (
-    <div className={`gen-progress${running ? ' running' : failed ? ' failed' : ''}`}>
+    <div className="gen-progress running">
       <div className="gen-progress-fill" style={{ width: `${width}%` }} />
       <span className="gen-progress-text">{text}</span>
     </div>
@@ -267,27 +282,13 @@ function NeuralStrip() {
   )
 }
 
-export function GenerationPanel() {
+/** GENERATE tab content — the ForgeDock owns the module shell, the tab
+ * header, the sticky dock, and the open/collapsed state. */
+export function GenerationPanel({ open }: { open: boolean }) {
   const { concepts, motifs, pending, generation } = useAppState()
   const dispatch = useAppDispatch()
-  const [open, setOpen] = useState(true)
   // Tracked here (not inside GenProgress) so the run survives collapsing the panel.
   const run = useGenerationRun(pending)
-  // The panel docks sticky to the top of the scrolling view; `stuck` adds a
-  // floating shadow once anything has scrolled underneath it.
-  const dockRef = useRef<HTMLElement | null>(null)
-  const [stuck, setStuck] = useState(false)
-  useEffect(() => {
-    // The panel sits inside a display:contents keep-alive wrapper (App.tsx),
-    // so walk up to the scrolling .view container rather than parentElement.
-    const scroller = dockRef.current?.closest('.view')
-    if (!scroller) return
-    const onScroll = () => setStuck(scroller.scrollTop > 2)
-    onScroll()
-    scroller.addEventListener('scroll', onScroll, { passive: true })
-    return () => scroller.removeEventListener('scroll', onScroll)
-  }, [])
-  const dockClass = `gen-dock${stuck ? ' stuck' : ''}`
   // Tier-1 offline symbolic engine is the default (spec Phase 6).
   const [engine, setEngine] = useState<Engine>('instant')
   const claudeReady = useClaudeReady()
@@ -330,6 +331,10 @@ export function GenerationPanel() {
   }, [engine, voicing])
   const [includeRhythm, setIncludeRhythm] = useState(true)
   const [extraInstruments, setExtraInstruments] = useState(false)
+  // INSTANT/GENETIC always produce a melodic line, so with a melody-bearing
+  // voicing LEAD isn't disabled so much as mandatory — rendered as a latched
+  // chip with a lock glyph rather than the dim "engine ignores this" look.
+  const leadLocked = noTextures && !dice.parts && !(voicing === 'chords' && !dice.voicing)
   // Latched = every offline candidate gets a rolled synth patch instead of the
   // deliberately plain default voice (CLAUDE sound-designs its own parts).
   const [randomSound, setRandomSound] = useState(false)
@@ -628,13 +633,14 @@ export function GenerationPanel() {
 
   const actions = () => (
     <>
+      {/* creation is orange (accent); green is reserved for keep/commit */}
       <Tooltip label="Queue a single candidate matching the brief">
-        <Button className="green" onClick={() => generate(1)}>
+        <Button className="accent" onClick={() => generate(1)}>
           Generate
         </Button>
       </Tooltip>
       <Tooltip label="Queue one batch of 5 candidates — builds a pool to triage">
-        <Button className="dark" onClick={() => generate(5)}>
+        <Button className="accent" onClick={() => generate(5)}>
           Generate +5
         </Button>
       </Tooltip>
@@ -643,10 +649,7 @@ export function GenerationPanel() {
 
   if (!open) {
     return (
-      <section ref={dockRef} className={`module gen-strip ${dockClass}`}>
-        <button type="button" className="gen-title" onClick={() => setOpen(true)}>
-          Generate <CaretRightIcon size={10} />
-        </button>
+      <div className="gen-strip">
         <span className="gen-summary">
           {summary}
           {concept.trim() && (
@@ -659,16 +662,13 @@ export function GenerationPanel() {
         {briefApplies && text.trim() && <span className="gen-brief-preview">“{text.trim()}”</span>}
         <span className="spacer" />
         {actions()}
-      </section>
+      </div>
     )
   }
 
   return (
-    <section ref={dockRef} className={`module ${dockClass}`}>
+    <>
       <div className="gen-strip" style={{ paddingBottom: 0 }}>
-        <button type="button" className="gen-title" onClick={() => setOpen(false)}>
-          Generate <CaretDownIcon size={10} />
-        </button>
         <Tooltip label="Reset every field on this panel to its default">
           <Button onClick={resetBrief}>Default</Button>
         </Tooltip>
@@ -676,21 +676,7 @@ export function GenerationPanel() {
       </div>
       <div className="gen-module">
         <div className="gen-knobs">
-          <div className="gen-ctl">
-            <span className="knob-label gen-label-dice">
-              mode
-              <DiceToggle what="the mode" on={dice.mode} onToggle={() => toggleDice('mode')} />
-            </span>
-            <Tooltip label="Scale flavor: ionian = major, aeolian = natural minor; dorian/mixolydian sit between, phrygian/locrian are darker, lydian brighter">
-              <SegmentedControl
-                orientation="vertical"
-                disabled={dice.mode}
-                value={mode}
-                onChange={(v) => setMode(v as Mode)}
-                data={MODES.map((m) => ({ value: m, label: MODE_SHORT[m] }))}
-              />
-            </Tooltip>
-          </div>
+          {/* key before mode, matching the Noodle tab's column order */}
           <div className="gen-ctl">
             <span className="knob-label gen-label-dice">
               key <b>{key}</b>
@@ -708,6 +694,26 @@ export function GenerationPanel() {
                 </div>
               </Tooltip>
             </div>
+          </div>
+          <div className="gen-ctl">
+            <span className="knob-label gen-label-dice">
+              mode <b>{MODE_SHORT[mode]}</b>
+              <DiceToggle what="the mode" on={dice.mode} onToggle={() => toggleDice('mode')} />
+            </span>
+            <Tooltip label="Scale flavor: ionian = major, aeolian = natural minor; dorian/mixolydian sit between, phrygian/locrian are darker, lydian brighter">
+              <div>
+                <Knob
+                  label="mode"
+                  value={MODE_SHORT[mode]}
+                  position={MODES.indexOf(mode) / (MODES.length - 1)}
+                  onPosition={(p) => setMode(MODES[Math.round(p * (MODES.length - 1))])}
+                  detents={MODES.length}
+                  variant="light"
+                  showLabel={false}
+                  disabled={dice.mode}
+                />
+              </div>
+            </Tooltip>
           </div>
           <div className="gen-stack">
             <div className="gen-ctl">
@@ -815,30 +821,36 @@ export function GenerationPanel() {
           </div>
           {engine === 'instant' && (
             <div className="gen-ctl">
-              <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                <Tooltip label="Mood valence, dark ↔ bright — shifts the fitness targets and melodic register. Centered = neutral, exactly the untinted engine">
-                  <div>
-                    <Knob
-                      label="mood"
-                      value={MOOD_LABELS[Math.round((valence + 1) * 2)]}
-                      position={(valence + 1) / 2}
-                      onPosition={(p) => setValence(p * 2 - 1)}
-                      detents={5}
-                    />
-                  </div>
-                </Tooltip>
-                <Tooltip label="Mood arousal, calm ↔ driven — note density, syncopation, register, and drum energy. Centered = neutral">
-                  <div>
-                    <Knob
-                      label="energy"
-                      value={ENERGY_LABELS[Math.round(arousal * 4)]}
-                      position={arousal}
-                      onPosition={setArousal}
-                      detents={5}
-                    />
-                  </div>
-                </Tooltip>
-              </div>
+              <span className="knob-label">
+                mood <b>{MOOD_LABELS[Math.round((valence + 1) * 2)]}</b>
+              </span>
+              <Tooltip label="Mood valence, dark ↔ bright — shifts the fitness targets and melodic register. Centered = neutral, exactly the untinted engine">
+                <div>
+                  <Knob
+                    label="mood"
+                    value={MOOD_LABELS[Math.round((valence + 1) * 2)]}
+                    position={(valence + 1) / 2}
+                    onPosition={(p) => setValence(p * 2 - 1)}
+                    detents={5}
+                    showLabel={false}
+                  />
+                </div>
+              </Tooltip>
+              <span className="knob-label">
+                energy <b>{ENERGY_LABELS[Math.round(arousal * 4)]}</b>
+              </span>
+              <Tooltip label="Mood arousal, calm ↔ driven — note density, syncopation, register, and drum energy. Centered = neutral">
+                <div>
+                  <Knob
+                    label="energy"
+                    value={ENERGY_LABELS[Math.round(arousal * 4)]}
+                    position={arousal}
+                    onPosition={setArousal}
+                    detents={5}
+                    showLabel={false}
+                  />
+                </div>
+              </Tooltip>
             </div>
           )}
           {engine === 'neural' && <NeuralStrip />}
@@ -874,31 +886,40 @@ export function GenerationPanel() {
           <span className="micro" style={{ letterSpacing: '.14em' }}>
             Concept · brief
           </span>
-          <Tooltip label="Song concept / leitmotif tag — candidates are grouped under it in the Concepts view. Pick an existing concept from the dropdown or type a new name">
-            <Autocomplete
-              placeholder="concept — e.g. event horizon"
-              value={concept}
-              onChange={setConcept}
-              data={[...concepts.values()].map((c) => c.name)}
-            />
-          </Tooltip>
-          <Tooltip
-            label={
-              engine === 'claude'
-                ? 'Free-text direction: contour, rhythmic character, emotional intent, references — anything the composer should honor'
-                : briefApplies
-                  ? 'Free-text direction: a small Claude call plans the INSTANT engine from it (mood, contours, chord progression) — every note is still generated offline. Touched knobs override the plan'
-                  : 'Free-text direction steers CLAUDE, and (with an API key) plans the INSTANT engine — GENETIC and NEURAL steer by key/mode/bars (and GROOVE for GENETIC)'
-            }
-          >
-            <Textarea
-              rows={2}
-              placeholder="Contour, rhythmic character, emotional intent… e.g. slow rise then collapse, sparse and hollow, dread that resolves too late"
-              value={text}
-              onChange={(e) => setText(e.currentTarget.value)}
-              disabled={!briefApplies}
-            />
-          </Tooltip>
+          {briefApplies ? (
+            <>
+              <Tooltip label="Song concept / leitmotif tag — candidates are grouped under it in the Concepts view. Pick an existing concept from the dropdown or type a new name">
+                <Autocomplete
+                  placeholder="concept — e.g. event horizon"
+                  value={concept}
+                  onChange={setConcept}
+                  data={[...concepts.values()].map((c) => c.name)}
+                />
+              </Tooltip>
+              <Tooltip
+                label={
+                  engine === 'claude'
+                    ? 'Free-text direction: contour, rhythmic character, emotional intent, references — anything the composer should honor'
+                    : 'Free-text direction: a small Claude call plans the INSTANT engine from it (mood, contours, chord progression) — every note is still generated offline. Touched knobs override the plan'
+                }
+              >
+                <Textarea
+                  rows={2}
+                  placeholder="Contour, rhythmic character, emotional intent… e.g. slow rise then collapse, sparse and hollow, dread that resolves too late"
+                  value={text}
+                  onChange={(e) => setText(e.currentTarget.value)}
+                />
+              </Tooltip>
+            </>
+          ) : (
+            // The engine can't read the brief — one quiet line instead of two
+            // disabled ghost inputs; a set concept still shows (it tags every
+            // engine's candidates) and the column keeps its width.
+            <>
+              <span className="micro gen-brief-off">brief applies to the CLAUDE engine</span>
+              {concept.trim() && <span className="gen-concept-chip">{concept.trim()}</span>}
+            </>
+          )}
         </div>
         <div className="gen-divider" />
         <div className="gen-parts">
@@ -955,17 +976,20 @@ export function GenerationPanel() {
           <div className="gen-part-chips">
             <Tooltip
               label={
-                noTextures
-                  ? PARTLESS_CHIP_HINT
-                  : voicing === 'chords' && !dice.voicing
-                    ? 'CHORDS voicing has no melody — the lead/poly texture doesn’t apply'
-                    : 'Lead: one clear melodic line with occasional chords (≤4 voices). Off: freely polyphonic (≤6 voices, up to 4 parts)'
+                leadLocked
+                  ? 'LEAD is always included for LINE voicing'
+                  : noTextures
+                    ? PARTLESS_CHIP_HINT
+                    : voicing === 'chords' && !dice.voicing
+                      ? 'CHORDS voicing has no melody — the lead/poly texture doesn’t apply'
+                      : 'Lead: one clear melodic line with occasional chords (≤4 voices). Off: freely polyphonic (≤6 voices, up to 4 parts)'
               }
             >
-              <span className="gen-chip">
+              <span className="gen-chip" data-locked={leadLocked || undefined}>
                 <Chip
-                  checked={lead}
+                  checked={leadLocked || lead}
                   onChange={setLead}
+                  icon={leadLocked ? <LockSimpleIcon size={9} weight="bold" /> : undefined}
                   disabled={noTextures || dice.parts || (voicing === 'chords' && !dice.voicing)}
                 >
                   lead
@@ -1049,6 +1073,6 @@ export function GenerationPanel() {
         </div>
         <div className="gen-actions">{actions()}</div>
       </div>
-    </section>
+    </>
   )
 }
