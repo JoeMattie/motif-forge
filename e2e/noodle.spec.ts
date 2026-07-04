@@ -8,6 +8,10 @@ import { gotoApp } from './helpers'
  */
 
 async function openNoodle(page: import('@playwright/test').Page): Promise<void> {
+  // The gen panel docks sticky over the scrolling view and, when expanded at
+  // this viewport width, floats over the roll's upper rows — swallowing
+  // pencil clicks. Collapse it to its strip first, like a user would.
+  await page.getByRole('button', { name: /^Generate$/ }).first().click()
   await page.getByRole('button', { name: /^noodle$/i }).click()
   await expect(page.locator('.noodle-roll')).toBeVisible()
 }
