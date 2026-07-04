@@ -10,7 +10,8 @@ import { beatsPerBar } from '../../core/theory'
 import { newId } from '../../core/ids'
 import type { ValidationResult } from '../../core/validate'
 import { buildMotif, hex4, toResult } from '../symbolic'
-import { childSeed, mulberry32, pick } from '../symbolic/prng'
+import { chordVoicing, progression, progressionLabel } from '../symbolic/harmony'
+import { childSeed, mulberry32, pick, randInt } from '../symbolic/prng'
 import {
   evolveRhythm,
   RIFF_PRESET_NAMES,
@@ -20,7 +21,7 @@ import {
   surprisePreset,
   tiledAccents,
 } from './rhythm'
-import { assignPitches, type RiffOnset } from './pitch'
+import { ACCENT_VELOCITY, assignPitches, BASE_VELOCITY, type RiffOnset } from './pitch'
 
 export { RIFF_PRESET_NAMES, RIFF_PRESETS, type RiffPresetName } from './rhythm'
 
@@ -68,15 +69,50 @@ export function generateGeneticBatch(
     for (let step = 0; step < genome.length; step++) {
       if (genome[step] === 1) onsets.push({ step, accented: accents.has(step) })
     }
-    const pitched = assignPitches(onsets, { key: brief.key, mode: brief.mode }, rng)
-
     const stepDur = beatsPerBar(brief.timeSig) / preset.steps
-    const notes: Note[] = onsets.map((o, j) => ({
-      pitch: pitched[j].pitch,
-      startBeat: o.step * stepDur,
-      durationBeats: stepDur,
-      velocity: pitched[j].velocity,
-    }))
+
+    // The genome decides WHEN either way. LINE pitches the onsets exactly as
+    // before (zero new rng draws, so old seeds reproduce); CHORDS skips the
+    // pitch assigner and voices each onset as its bar's chord instead — those
+    // draws sit on a path old briefs can never take. BOTH never reaches this
+    // engine (the UI gates it); clamp defensively to LINE.
+    const chords = brief.voicing === 'chords'
+    let notes: Note[]
+    let chordTag = ''
+    if (chords) {
+      // Per-bar progression; stabs voiced low. Triads (3 tones) normally, the
+      // segment's seeded 7th only on accents — <=4 simultaneous voices, and no
+      // cross-step overlap since every note lasts exactly one step.
+      const prog = progression(brief.bars, brief.timeSig, rng, { allowHalfBar: false })
+      chordTag = ` — ${progressionLabel(prog, brief.key, brief.mode)}`
+      notes = []
+      for (const o of onsets) {
+        const seg = prog[Math.min(Math.floor(o.step / preset.steps), prog.length - 1)]
+        const tones = chordVoicing(seg.rootDegree, seg.seventh && o.accented, brief.key, brief.mode, {
+          maxVoices: 4,
+          rootWindow: [45, 57],
+        })
+        const velocity = Math.min(
+          127,
+          Math.max(
+            1,
+            o.accented ? ACCENT_VELOCITY + randInt(rng, -4, 4) : BASE_VELOCITY + randInt(rng, -6, 6),
+          ),
+        )
+        for (const pitch of tones) {
+          notes.push({ pitch, startBeat: o.step * stepDur, durationBeats: stepDur, velocity })
+        }
+      }
+      notes.sort((a, b) => a.startBeat - b.startBeat || a.pitch - b.pitch)
+    } else {
+      const pitched = assignPitches(onsets, { key: brief.key, mode: brief.mode }, rng)
+      notes = onsets.map((o, j) => ({
+        pitch: pitched[j].pitch,
+        startBeat: o.step * stepDur,
+        durationBeats: stepDur,
+        velocity: pitched[j].velocity,
+      }))
+    }
 
     motifs.push(
       buildMotif({
@@ -88,8 +124,15 @@ export function generateGeneticBatch(
         timeSig: brief.timeSig,
         tempo: brief.tempo,
         conceptId: null,
-        rationale: `genetic riff — ${presetName} genome${blurb}, ${hits} hits over ${brief.bars} bars, fitness ${fitness.toFixed(2)}`,
-        source: { kind: 'genetic', batchId, seed: cs, preset: presetName, fitness },
+        rationale: `genetic ${chords ? 'chord riff' : 'riff'} — ${presetName} genome${blurb}${chordTag}, ${hits} hits over ${brief.bars} bars, fitness ${fitness.toFixed(2)}`,
+        source: {
+          kind: 'genetic',
+          batchId,
+          seed: cs,
+          preset: presetName,
+          fitness,
+          ...(chords ? { voicing: 'chords' as const } : {}),
+        },
       }),
     )
   }

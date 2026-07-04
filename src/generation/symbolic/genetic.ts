@@ -41,23 +41,40 @@ export interface LineMaterial extends MutationContext {
 }
 
 /**
- * The keeper's primary melodic material as a partless line: the first
- * non-drum part when parts exist, all notes otherwise. GA children are
- * partless melodic bones (monophonic-first; polyphony passes through).
+ * The keeper's primary melodic material as a partless line: the first part
+ * that is neither drums nor a 'chords' bed when parts exist, all notes
+ * otherwise. A CHORDS-mode keeper (only a chords part) reduces to its top
+ * voice per onset so keeper crossover / fitness never see vertical stacks.
+ * GA children are partless melodic bones (monophonic-first; polyphony
+ * passes through).
  */
 export function melodicLine(m: LineMaterial): Note[] {
   let picked: Note[]
+  let chordsOnly = false
   if (m.parts.length === 0) {
     picked = m.notes
   } else {
-    const leadIndex = m.parts.findIndex((p) => p.instrument !== 'drums')
+    let leadIndex = m.parts.findIndex((p) => p.instrument !== 'drums' && p.name !== 'chords')
+    if (leadIndex === -1) {
+      leadIndex = m.parts.findIndex((p) => p.instrument !== 'drums')
+      chordsOnly = true
+    }
     picked = m.notes.filter((n) => (n.part ?? 0) === leadIndex)
     if (picked.length < 3) {
       const drumParts = new Set(m.parts.flatMap((p, i) => (p.instrument === 'drums' ? [i] : [])))
       picked = m.notes.filter((n) => !drumParts.has(n.part ?? 0))
     }
   }
-  return sortNotes(picked.map(({ part: _part, ...n }) => ({ ...n })))
+  let line = picked.map(({ part: _part, ...n }) => ({ ...n }))
+  if (chordsOnly) {
+    const topByOnset = new Map<number, Note>()
+    for (const n of line) {
+      const top = topByOnset.get(n.startBeat)
+      if (!top || n.pitch > top.pitch) topByOnset.set(n.startBeat, n)
+    }
+    line = [...topByOnset.values()]
+  }
+  return sortNotes(line)
 }
 
 /** Degree-index space (octave * 7 + degree): moving here is always in-scale. */

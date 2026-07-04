@@ -139,6 +139,45 @@ describe('genetic operators', () => {
     expect(line.every((n) => n.part === undefined)).toBe(true)
   })
 
+  it('melodicLine prefers a real lead over a chords bed', () => {
+    const m = denseKeeper({
+      parts: [
+        { name: 'chords', instrument: 'synth' },
+        { name: 'lead', instrument: 'synth' },
+      ],
+      notes: [
+        makeNote({ pitch: 50, startBeat: 0, part: 0 }),
+        makeNote({ pitch: 53, startBeat: 0, part: 0 }),
+        makeNote({ pitch: 57, startBeat: 0, part: 0 }),
+        makeNote({ pitch: 62, startBeat: 0, part: 1 }),
+        makeNote({ pitch: 64, startBeat: 1, part: 1 }),
+        makeNote({ pitch: 65, startBeat: 2, part: 1 }),
+      ],
+    })
+    expect(melodicLine(m).map((n) => n.pitch)).toEqual([62, 64, 65])
+  })
+
+  it('melodicLine reduces a chords-only keeper to its top voice per onset', () => {
+    const m = denseKeeper({
+      parts: [
+        { name: 'chords', instrument: 'synth' },
+        { name: 'kit', instrument: 'drums' },
+      ],
+      notes: [
+        makeNote({ pitch: 48, startBeat: 0, part: 0 }),
+        makeNote({ pitch: 52, startBeat: 0, part: 0 }),
+        makeNote({ pitch: 55, startBeat: 0, part: 0 }),
+        makeNote({ pitch: 53, startBeat: 2, part: 0 }),
+        makeNote({ pitch: 57, startBeat: 2, part: 0 }),
+        makeNote({ pitch: 60, startBeat: 2, part: 0 }),
+        makeNote({ pitch: 36, startBeat: 0, part: 1 }),
+      ],
+    })
+    const line = melodicLine(m)
+    expect(line.map((n) => n.pitch)).toEqual([55, 60])
+    expect(line.every((n) => n.part === undefined)).toBe(true)
+  })
+
   it('crossover children splice head-of-A with re-spelled tail-of-B, in A’s scale', () => {
     const a = denseKeeper({ id: 'A', key: 'D', mode: 'dorian' })
     const b = denseKeeper({ id: 'B', key: 'G', mode: 'mixolydian' })
@@ -231,6 +270,7 @@ describe('population step', () => {
     text: '',
     allowChromatic: false,
     texture: 'lead',
+    voicing: 'line',
     includeRhythm: false,
     extraInstruments: false,
   }
