@@ -2,9 +2,11 @@
 
 A local-first web app for generating, auditioning, mutating, and exporting short melodic motifs ("hooks" / leitmotifs) as MIDI and WAV — entirely in the browser.
 
-The workflow mirrors a curation-heavy writing process: **generate candidates in batches → triage them by ear in minutes → mutate the survivors → export the winners.** Exported files are meant to be fed to Suno (or any tool) as seed audio, so arrangements get built around melodic material you authored instead of genre-generic output.
+The workflow mirrors a curation-heavy writing process: **generate candidates in batches — or play/sing your own in — triage them by ear in minutes → mutate the survivors → export the winners.** Exported files are meant to be fed to Suno (or any tool) as seed audio, so arrangements get built around melodic material you authored instead of genre-generic output.
 
 Motifs are 2–8 bars, polyphonic, and multi-part — chords, sustained pads under moving lines, counterpoint, optional drum grooves — with up to 6 parts each carrying its own instrument. The UI is a **hardware workbench**: matte panel modules, chunky 3D keys, rotary knobs, and piano rolls rendered on inset dark LCD screens, in a light **Day** theme, a dark **Nite** theme, or following the system.
+
+**Live at [motif-forge.pages.dev](https://motif-forge.pages.dev)** — everything runs client-side; bring your own Anthropic key for the CLAUDE engine.
 
 ## Quick start
 
@@ -13,7 +15,7 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-That's it for the default experience — the **INSTANT** generation engine, playback, triage, deterministic mutation, the library, and MIDI/WAV export all run fully offline with no credentials. An Anthropic API key is only needed for the **CLAUDE** engine and LLM mutations (see [API access](#api-access)), and the **NEURAL** engine needs a one-time model download.
+That's it for the default experience — the **INSTANT** generation engine, the **Noodle** panel (your own MIDI/typing/mic input, transcription included), playback, triage, deterministic mutation, the library, and MIDI/WAV export all run fully offline with no credentials. An Anthropic API key is only needed for the **CLAUDE** engine and LLM mutations (see [API access](#api-access)), and the **NEURAL** engine needs a one-time model download.
 
 ## Four generation engines
 
@@ -26,9 +28,18 @@ The generation panel's ENGINE switch selects how candidates are made:
 
 All four engines funnel through the same validation and land in the same triage queue; batches render as pulsing placeholder cards so you can stack requests and keep triaging.
 
+## Noodle — your own material
+
+GENERATE and NOODLE share one tabbed dock; the Noodle tab is the fifth way into the pool — playing it yourself, fully offline:
+
+- **MIDI & musical typing** — arm loop-overdub recording against a gapless click: recording anchors to the bar line of your first note and every pass layers on top. Web MIDI devices, or `a w s e d f t g y h u j k` musical typing with `z`/`x` octave shifts.
+- **Mic capture & transcription** — a count-in, exactly N click-synced bars, then one of three on-device transcribers: **VOICE** (hand-rolled YIN pitch tracking for humming/whistling/singing), **INST** (Spotify's [Basic Pitch](https://github.com/spotify/basic-pitch) polyphonic model, ~225 KB, run locally with NeuralNote-style retune knobs), or **BEATS** (spectral-flux onset picking that classifies beatboxing into kick/snare/hat). No audio leaves the browser.
+- **An editable piano roll** — pencil/select tools, drag/resize/marquee, a velocity lane, snap grids down to eighth-note triplets, a key-lock that shades in-scale rows and snaps incoming pitches, destructive QUANTIZE / TO KEY keys, and per-gesture undo. The full pitch range stays visible — no vertical scrolling.
+- **ADD TO POOL** commits the staged take as a fresh family in the triage grid; the take survives reloads so you can commit variants. Pressing `n` on any triage card loads *it* into the roll for hand-editing (with a confirm before replacing a staged take).
+
 ## Features
 
-- **Constraint-brief generation** — key (picked on an SVG circle-of-fifths dial) and mode, tempo, bars, in-scale strict vs chromatic, texture (lead line with light harmony vs free polyphony), optional rhythm/drums part (composed by CLAUDE/NEURAL, laid as a seeded probabilistic groove by INSTANT), an EXTRA toggle for 4–6 instrument parts, free-text direction (contour, emotional intent, references), and a song-concept tag. Or hit **🎲 Surprise me** for free-rein motifs where the model picks its own key, tempo, texture, and instrumentation. Every candidate is validated (pitch range 36–96, bar bounds, ≤8 simultaneous voices, ≥3 notes); invalid ones are dropped with a count, out-of-scale notes get a warning badge instead of being rejected. Drum parts use GM drum pitches, play through a built-in synthesized kit, and export on MIDI channel 9.
+- **Constraint-brief generation** — key (picked on an SVG circle-of-fifths dial) and mode, tempo, bars, in-scale strict vs chromatic, texture (lead line with light harmony vs free polyphony), voicing (melodic line, chord progression, or melody + chords), optional rhythm/drums part (composed by CLAUDE/NEURAL, laid as a seeded probabilistic groove by INSTANT), an EXTRA toggle for 4–6 instrument parts, free-text direction (contour, emotional intent, references), and a song-concept tag. Or hit **🎲 Surprise me** for free-rein motifs where the model picks its own key, tempo, texture, and instrumentation. Every candidate is validated (pitch range 36–96, bar bounds, ≤8 simultaneous voices, ≥3 notes); invalid ones are dropped with a count, out-of-scale notes get a warning badge instead of being rejected. Drum parts use GM drum pitches, play through a built-in synthesized kit, and export on MIDI channel 9.
 - **Families** — a motif plus all its lineage descendants form a family, and the triage grid shows exactly **one card per family** (its promoted "face"), so mutating never inflates the pool you're triaging. Variants live in a fold-out tray under the card (`F`); promoting (`P`) picks which member fronts the family. Filters, triage progress, and concept tags all operate family-wide.
 - **Audition** — piano-roll LCD thumbnails with a selectable sound: plain polysynth by default (deliberately neutral, so you judge the melodic bones) or sampled piano / e-piano / marimba / strings via [smplr](https://github.com/danigb/smplr) (CDN-fetched on first use, then cached). Multi-part motifs route each part to its own instrument; a "force" toggle auditions everything through the picked sound. Moving playhead synced to the audio clock, metronome, root-note drone, global tempo override.
 - **Two triage modes** — the grid, or a **Focus** deck: one large LCD, a prev/play/next cluster, a 1–5 rate keypad with auto-advance, and a queue strip. Both are keyboard-first, built to get through 100 candidates fast:
@@ -41,12 +52,13 @@ All four engines funnel through the same validation and land in the same triage 
   | `x` | discard and advance |
   | `u` | undo last discard |
   | `f` | fold / unfold the family tray |
-  | `p` | promote as the family's face |
+  | `↵` | use as the family's face |
   | `m` | open the mutation bay |
+  | `n` | load into the Noodle roll for hand-editing |
 
 - **Deterministic transforms** — applied instantly client-side: inversion, retrograde, retrograde-inversion, transposition, augmentation/diminution, mode swap via scale-degree remapping, octave displacement of selected notes. Every child records its parent and the transformation applied — the store *is* the lineage graph.
 - **LLM mutations** — free-text direction ("keep the first bar intact but resolve differently", "add a drum groove"), a **lock rhythm** option that freezes the parent's note timings so only pitches change, and a mutation-side **🎲 Surprise me**.
-- **Mutation Bay** — a per-part variation workspace that slides up over any view (`m`). Each part gets its own row of take cards, and every card carries three keys: **MUTATE** evolves one instant offline take per press (seeded in-scale edits from the same genetic operators as INSTANT; rhythm-only ops on drum parts), **CLAUDE** asks for a targeted change in plain text and runs one LLM take on *that part only* with every other part locked note-for-note, and **ADV** chains part-scoped deterministic transforms. A **sound dice** (`s`) on each track header re-rolls the part onto a random other instrument without touching its notes. Results nest rightward as a tree; `Enter` selects a take per part, `Space` loops the composite mix, and changing a selection mid-loop hot-swaps it in on the same beat grid — pending notes cancel, sounding notes ring out. PROMOTE MIX adds the assembled composite to the family; REBASE and PRUNE keep the tree tidy. Variation trees persist alongside everything else.
+- **Mutation Bay** — a per-part variation workspace that slides up over any view (`m`). All take trees render on one shared pan/zoom patch-panel canvas (React Flow + dagre auto-layout): one lane per part, take cards nesting rightward as a tree, edges drawn as color-coded patch cables (green = deterministic transform, orange = Claude, yellow = evolve/sound) with an LCD minimap — and cards drag by their header, with hand-placed positions remembered per motif. Every card carries three keys: **MUTATE** evolves one instant offline take per press (seeded in-scale edits from the same genetic operators as INSTANT; rhythm-only ops on drum parts), **CLAUDE** asks for a targeted change in plain text and runs one LLM take on *that part only* with every other part locked note-for-note, and **ADV** chains part-scoped deterministic transforms. A **sound dice** (`s`) on each track header re-rolls the part onto a random other instrument without touching its notes. `Enter` selects a take per part, `Space` loops the composite mix, and changing a selection mid-loop hot-swaps it in on the same beat grid — pending notes cancel, sounding notes ring out. PROMOTE MIX adds the assembled composite to the family; REBASE and PRUNE keep the tree tidy. Variation trees persist alongside everything else.
 - **Leitmotif library & concepts** — the Library gates by rating, filters by concept, and exports all promoted takes as .MID in one click. The Concepts view is a leitmotif desk: per-root variant trays, derived variants tagged with the track they were transformed for, play-all-in-sequence, and a TRANSFORM FOR NEW TRACK shortcut into the bay. Everything — motifs, ratings, families, concepts, bay trees, mid-triage state — persists in IndexedDB; discard is a soft flag, so a refresh mid-triage loses nothing.
 - **Export** — any motif as a Standard MIDI File (format 0, 480 TPQN, parts mapped to channels with GM program changes, drums on channel 9) or as a WAV rendered offline through the exact same instrument adapters as live playback — mixed Tone.js + sampled parts render in a single pass.
 
@@ -95,7 +107,7 @@ Vitest, Playwright, and Biome are dev-only; runtime dependencies stay minimal.
 
 ## Architecture
 
-Vite + React 19 + TypeScript strict. Runtime deps: `react`/`react-dom`, `@mantine/core`/`@mantine/hooks`/`@mantine/notifications` (UI), `@phosphor-icons/react` (icons), `tone` + `smplr` (playback instruments), `onnxruntime-web` (neural engine). The MIDI writer, WAV encoder, and IndexedDB wrapper are hand-rolled from spec by design.
+Vite + React 19 + TypeScript strict. Runtime deps: `react`/`react-dom`, `@mantine/core`/`@mantine/hooks`/`@mantine/notifications` (UI), `@phosphor-icons/react` (icons), `tone` + `smplr` (playback instruments), `@xyflow/react` + `@dagrejs/dagre` (the mutation bay's node-graph canvas), `onnxruntime-web` (neural engine + Basic Pitch transcription). The MIDI writer, WAV encoder, IndexedDB wrapper, and mic DSP (YIN pitch tracker, FFT onset classifier) are hand-rolled from spec by design.
 
 ```
 src/
@@ -114,9 +126,13 @@ src/
                  (ga-riffs port)
     neural/      NEURAL engine: tokenizer port, sampling loop, WebGPU worker,
                  download/OPFS/manifest client
+  noodle/        own-input capture: staged-take store, Web MIDI, musical
+                 typing, loop-overdub recorder, mic capture, and the offline
+                 transcribers (YIN voice, Basic Pitch, beat classifier)
   store/         reducer + context, swappable persistence (IndexedDB / memory)
   components/    triage grid, focus deck, family tray, LCD piano roll,
-                 generation panel, mutation bay, library, concepts view,
+                 forge dock (generate + noodle tabs), editable noodle roll,
+                 mutation bay on a React Flow canvas, library, concepts view,
                  hand-rolled hardware controls (knobs, toggles, keys)
 tools/quantize/  Python tooling (not shipped) that produces the int8 neural
                  model artifacts and golden tokenizer fixtures
@@ -141,4 +157,4 @@ Design notes worth knowing before hacking on it:
 
 ## Out of scope
 
-Audio input/transcription, direct Suno API integration (the handoff is manual file upload), multi-user, auth, mobile polish.
+Direct Suno API integration (the handoff is manual file upload), multi-user, auth, mobile polish.
