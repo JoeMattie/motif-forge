@@ -178,6 +178,9 @@ mark.hk,
   min-height: 20px;
   transition: border-color 100ms, box-shadow 100ms, filter 100ms;
   user-select: none;
+  /* keys never compress in a tight flex row — their label would clip;
+     containers wrap instead */
+  flex-shrink: 0;
 }
 .wb-btn[data-variant='default'] {
   background: var(--surface);
@@ -616,8 +619,11 @@ mark.hk,
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 14px 24px 10px;
+  padding: 14px clamp(14px, 1.8vw, 24px) 10px;
   flex: none;
+  /* controls spill onto a second line on narrow windows instead of clipping */
+  flex-wrap: wrap;
+  row-gap: 6px;
 }
 /* Every boxed control in the header sits at one 26px height: keys, seg
    switches (20px label + 2px padding + 1px border each side), toggle, icon. */
@@ -661,6 +667,9 @@ mark.hk,
    theme): flat uppercase keys on the panel, accent underline when active. */
 .wb-tabs-list {
   gap: 2px;
+  /* Mantine's list wraps by default — the header wraps the whole tab group
+     to the next line instead of stacking tabs vertically */
+  flex-wrap: nowrap;
 }
 .wb-tabs-list::before {
   display: none;
@@ -696,6 +705,8 @@ mark.hk,
   border: 1px solid var(--surface-border);
   border-radius: 7px;
   padding: 2px;
+  /* same rule as keys: a compressed seg switch clips its items */
+  flex-shrink: 0;
 }
 /* dimmed + inert only while the WHOLE control is disabled (e.g. a dice
    toggle overrides the value) — keyed as "no enabled input left", because a
@@ -809,10 +820,15 @@ main {
 .view {
   flex: 1;
   overflow-y: auto;
-  padding: 0 24px 16px;
+  /* gutters tighten fluidly on narrow windows (24px at ≥1333px wide) */
+  padding: 0 clamp(14px, 1.8vw, 24px) 16px;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  /* the query container for everything that adapts to width — the generate
+     panel and the card grids size against the view, not the viewport, so
+     they'd still wrap right if ever hosted somewhere narrower */
+  container: view / inline-size;
 }
 
 /* ---------- generation strip / module ---------- */
@@ -839,6 +855,9 @@ main {
   display: flex;
   align-items: center;
   gap: 14px;
+  row-gap: 6px;
+  /* the collapsed strip's summary + action keys wrap rather than overflow */
+  flex-wrap: wrap;
   padding: 9px 16px;
   font-size: 10px;
   letter-spacing: 0.08em;
@@ -880,13 +899,15 @@ main {
 
 .gen-module {
   display: flex;
-  gap: 22px;
+  /* column gaps breathe with the panel (cqi = 1% of the view container's
+     width): full 22px on a wide panel, tightening before columns wrap */
+  gap: clamp(14px, 1.6cqi, 22px);
   align-items: stretch;
   padding: 14px 18px;
 }
 .gen-knobs {
   display: flex;
-  gap: 20px;
+  gap: clamp(12px, 1.5cqi, 20px);
   align-items: flex-start;
 }
 /* ---------- circle of fifths (hand-rolled key dial + key-signature icon) ---------- */
@@ -1045,6 +1066,41 @@ main {
   min-width: 76px;
 }
 
+/* Narrow panels (below the ~1270px its fixed columns need side by side —
+   about a 1320px window): the columns wrap into rows. The vertical section
+   dividers would land mid-row meaninglessly — hidden while wrapped. Queried
+   against the view container, not the viewport, so the breakpoint tracks the
+   panel's actual room. */
+@container view (max-width: 1272px) {
+  .gen-module {
+    flex-wrap: wrap;
+    row-gap: 18px;
+  }
+  .gen-module > .gen-divider {
+    display: none;
+  }
+  /* concept + brief keeps a usable width and wraps to its own row when it
+     can't have one */
+  .gen-mid {
+    flex: 1 1 280px;
+  }
+  /* the action keys read as a row once they're in the wrapped flow */
+  .gen-actions {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+}
+/* Very narrow: the knob cluster (mode / key dial / tempo+bars) wraps too,
+   and the triage hotkey legend gives up its single line */
+@container view (max-width: 640px) {
+  .gen-knobs {
+    flex-wrap: wrap;
+  }
+  .kbd-legend {
+    white-space: normal;
+  }
+}
+
 /* LCD progress strip (hidden with the collapsed panel) */
 .gen-progress {
   position: relative;
@@ -1096,6 +1152,8 @@ main {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* the hotkey legend takes its own line when the window can't fit it */
+  flex-wrap: wrap;
 }
 .note-chip {
   font-size: 8.5px;
@@ -1125,6 +1183,14 @@ main {
   /* row gap leaves air for the taller stack-lip layers hanging below cards */
   gap: 18px 12px;
   align-items: start;
+}
+/* Narrow views: auto-fill counts columns by the 380px max track, which
+   strands one card beside a dead gutter once two 380s no longer fit — count
+   by the 280px minimum instead and let cards share the row */
+@container view (max-width: 840px) {
+  .motif-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
 }
 
 .motif-card {
@@ -1546,13 +1612,16 @@ main {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin: 0 24px 14px;
+  margin: 0 clamp(14px, 1.8vw, 24px) 14px;
   padding: 10px 16px;
   font-size: 9.5px;
   letter-spacing: 0.08em;
   color: var(--label);
   text-transform: uppercase;
   flex: none;
+  /* triage progress drops to a second line on narrow windows */
+  flex-wrap: wrap;
+  row-gap: 6px;
 }
 .transport-strip .now-playing {
   display: flex;
