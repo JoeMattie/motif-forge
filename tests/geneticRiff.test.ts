@@ -202,7 +202,8 @@ describe('evolveRhythm', () => {
     }
   })
 
-  it('always lands enough hits for a valid motif (>=3 notes)', () => {
+  // 45 full GA runs (presets × bars × seeds) — over Vitest's 5s default on CI runners.
+  it('always lands enough hits for a valid motif (>=3 notes)', { timeout: 20000 }, () => {
     for (const name of RIFF_PRESET_NAMES) {
       for (const bars of [2, 4, 8]) {
         for (let s = 0; s < 5; s++) {
