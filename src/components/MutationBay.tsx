@@ -31,7 +31,15 @@ import { isTypingTarget } from './hooks/useKeyboardTriage'
 import { usePlayOptions } from './hooks/usePlayOptions'
 import { LcdRoll } from './LcdRoll'
 import { PlayRound } from './hw/PlayRound'
-import { PartRow, provenanceLabel, type BayFocus } from './bay/PartRow'
+import { provenanceLabel, type BayFocus } from './bay/bayTypes'
+import {
+  BayFlowProvider,
+  type BayFlowCallbacks,
+  type BayFlowContextValue,
+} from './bay/flow/BayFlowContext'
+import { BayFlowCanvas } from './bay/flow/BayFlowCanvas'
+import { buildFlowGraph } from './bay/flow/graph'
+import { layoutBay, originNodeId } from './bay/flow/layout'
 
 function lineageChain(motif: Motif, motifs: Map<string, Motif>): Motif[] {
   const chain: Motif[] = [motif]
@@ -139,6 +147,8 @@ export function MutationBay({ source }: { source: Motif }) {
   const [message, setMessage] = useState<string | null>(null)
   const [pruneArmed, setPruneArmed] = useState(false)
   const pruneTimer = useRef<number | null>(null)
+  /** What moved the focus last: only keyboard moves auto-pan the canvas. */
+  const focusSourceRef = useRef<'keyboard' | 'pointer'>('pointer')
 
   useEffect(
     () => () => {
@@ -148,14 +158,15 @@ export function MutationBay({ source }: { source: Motif }) {
   )
 
   // Focus may point at a node that was pruned or hidden since — fall back to
-  // the row's origin cell instead of a dangling cursor.
-  const focusedVariation = focus.nodeId ? state.partVariations.get(focus.nodeId) : undefined
-  const effFocus: BayFocus =
-    focus.part >= partCount
-      ? { part: 0, nodeId: null }
-      : focus.nodeId && (!focusedVariation || (focusedVariation.hidden && !showHidden))
-        ? { part: focus.part, nodeId: null }
-        : focus
+  // the row's origin cell instead of a dangling cursor. Memoized so the flow
+  // graph rebuild only fires when the effective focus actually changes.
+  const effFocus: BayFocus = useMemo(() => {
+    if (focus.part >= partCount) return { part: 0, nodeId: null }
+    const focusedVariation = focus.nodeId ? state.partVariations.get(focus.nodeId) : undefined
+    return focus.nodeId && (!focusedVariation || (focusedVariation.hidden && !showHidden))
+      ? { part: focus.part, nodeId: null }
+      : focus
+  }, [focus, partCount, state.partVariations, showHidden])
 
   const focusNode = (part: number, nodeId: string | null) => {
     setFocus({ part, nodeId })
@@ -408,6 +419,7 @@ export function MutationBay({ source }: { source: Motif }) {
   const vis = (ns: PartTreeNode[]) => ns.filter((n) => showHidden || !n.variation.hidden)
 
   const moveFocus = (dir: 'up' | 'down' | 'left' | 'right') => {
+    focusSourceRef.current = 'keyboard'
     const { part, nodeId } = effFocus
     // Arrows match the layout: mutations sit side by side, children hang
     // below their parent. Down descends into the children row, Up climbs
@@ -514,14 +526,105 @@ export function MutationBay({ source }: { source: Motif }) {
   // ---- render ----
 
   const chain = lineageChain(source, state.motifs)
-  const rowParts = hasParts
-    ? source.parts.map((p, i) => ({
-        name: p.name,
-        instrument: p.instrument === 'drums' ? 'GM kit' : p.instrument,
-        isDrums: p.instrument === 'drums',
-        index: i,
-      }))
-    : [{ name: 'all', instrument: 'transport sound', isDrums: false, index: 0 }]
+  const rowParts = useMemo(
+    () =>
+      hasParts
+        ? source.parts.map((p, i) => ({
+            name: p.name,
+            instrument: p.instrument === 'drums' ? 'GM kit' : p.instrument,
+            isDrums: p.instrument === 'drums',
+            index: i,
+          }))
+        : [{ name: 'all', instrument: 'transport sound', isDrums: false, index: 0 }],
+    [hasParts, source.parts],
+  )
+  const originNotes = useMemo(
+    () => Array.from({ length: partCount }, (_, i) => partNotes(source, i)),
+    [source, partCount],
+  )
+
+  // ---- the shared canvas: dagre layout → flow graph → context ----
+
+  const layout = useMemo(
+    () => layoutBay({ trees, showHidden, collapsedParts, pending }),
+    [trees, showHidden, collapsedParts, pending],
+  )
+  const graph = useMemo(
+    () =>
+      buildFlowGraph({
+        parts: rowParts,
+        trees,
+        layout,
+        selection,
+        focus: effFocus,
+        advanced,
+        showHidden,
+        collapsedParts,
+        pending,
+        hasParts,
+        originNotes,
+      }),
+    [
+      rowParts,
+      trees,
+      layout,
+      selection,
+      effFocus,
+      advanced,
+      showHidden,
+      collapsedParts,
+      pending,
+      hasParts,
+      originNotes,
+    ],
+  )
+
+  // Node components read callbacks from context, not node data. The handlers
+  // close over fresh state every render, so — exactly like the keydown
+  // listener — they route through a ref and the context object stays stable.
+  const liveCallbacks: BayFlowCallbacks = {
+    focusNode: (part, nodeId) => {
+      focusSourceRef.current = 'pointer'
+      focusNode(part, nodeId)
+    },
+    applySelection,
+    mutateGa,
+    runMutation,
+    applyPartTransform,
+    rollSound,
+    toggleAdvanced: (part, nodeId) => {
+      // plain setFocus, not focusNode — focusNode drags an open ADV
+      // dropdown onto this take first, which would make the toggle
+      // read as "already open" and close it instead of moving it
+      focusSourceRef.current = 'pointer'
+      setFocus({ part, nodeId })
+      setAdvanced((a) => (a?.part === part && a.nodeId === nodeId ? null : { part, nodeId }))
+    },
+    closeAdvanced: () => setAdvanced(null),
+    toggleCollapse,
+  }
+  const callbacksRef = useRef(liveCallbacks)
+  useEffect(() => {
+    callbacksRef.current = liveCallbacks
+  })
+  const stableCallbacks = useMemo<BayFlowCallbacks>(
+    () => ({
+      focusNode: (part, nodeId) => callbacksRef.current.focusNode(part, nodeId),
+      applySelection: (part, node) => callbacksRef.current.applySelection(part, node),
+      mutateGa: (part, node) => callbacksRef.current.mutateGa(part, node),
+      runMutation: (part, node, brief) => callbacksRef.current.runMutation(part, node, brief),
+      applyPartTransform: (part, node, t) => callbacksRef.current.applyPartTransform(part, node, t),
+      rollSound: (part) => callbacksRef.current.rollSound(part),
+      toggleAdvanced: (part, nodeId) => callbacksRef.current.toggleAdvanced(part, nodeId),
+      closeAdvanced: () => callbacksRef.current.closeAdvanced(),
+      toggleCollapse: (part) => callbacksRef.current.toggleCollapse(part),
+    }),
+    [],
+  )
+  const bayCtx = useMemo<BayFlowContextValue>(
+    () => ({ source, mixId, claudeReady, callbacks: stableCallbacks }),
+    [source, mixId, claudeReady, stableCallbacks],
+  )
 
   return (
     <div className="bay">
@@ -593,48 +696,19 @@ export function MutationBay({ source }: { source: Motif }) {
         </div>
       </section>
 
-      {rowParts.map((p) => (
-        <PartRow
-          key={p.index}
-          source={source}
-          partIndex={p.index}
-          partName={p.name}
-          instrument={p.instrument}
-          isDrums={p.isDrums}
-          roots={trees[p.index] ?? []}
-          originNotes={partNotes(source, p.index)}
-          selectedId={selection.get(p.index)?.id ?? null}
-          selectedTake={selection.get(p.index) ?? null}
-          focus={effFocus.part === p.index ? effFocus : null}
-          showHidden={showHidden}
-          pendingParents={pending.filter((b) => b.part === p.index).map((b) => b.parentNodeId)}
-          mixId={mixId}
-          collapsed={collapsedParts.has(p.index)}
-          onToggleCollapse={() => toggleCollapse(p.index)}
-          canRollSound={hasParts && !p.isDrums}
-          advancedNodeId={advanced?.part === p.index ? advanced.nodeId : undefined}
-          claudeReady={claudeReady}
-          busy={pending.some((b) => b.part === p.index)}
-          callbacks={{
-            onFocus: (nodeId) => focusNode(p.index, nodeId),
-            onSelect: (node) => applySelection(p.index, node),
-            onMutate: (node) => mutateGa(p.index, node),
-            onClaude: (node, brief) => runMutation(p.index, node, brief),
-            onTransform: (node, t) => applyPartTransform(p.index, node, t),
-            onSoundRoll: () => rollSound(p.index),
-            onToggleAdvanced: (nodeId) => {
-              // plain setFocus, not focusNode — focusNode drags an open ADV
-              // dropdown onto this take first, which would make the toggle
-              // read as "already open" and close it instead of moving it
-              setFocus({ part: p.index, nodeId })
-              setAdvanced((a) =>
-                a?.part === p.index && a.nodeId === nodeId ? null : { part: p.index, nodeId },
-              )
-            },
-            onCloseAdvanced: () => setAdvanced(null),
-          }}
-        />
-      ))}
+      <div className="bay-canvas">
+        <BayFlowProvider value={bayCtx}>
+          <BayFlowCanvas
+            nodes={graph.nodes}
+            edges={graph.edges}
+            focusKey={`${effFocus.part}:${effFocus.nodeId ?? 'origin'}`}
+            focusRect={layout.positions.get(effFocus.nodeId ?? originNodeId(effFocus.part)) ?? null}
+            focusSource={focusSourceRef}
+            // pan/zoom moves the anchor under a fixed dropdown — close ADV
+            onMoveStart={stableCallbacks.closeAdvanced}
+          />
+        </BayFlowProvider>
+      </div>
 
       <div className="bay-footer">
         <Tooltip label="Hide every take that isn't on a selected path — reversible with SHOW HIDDEN">

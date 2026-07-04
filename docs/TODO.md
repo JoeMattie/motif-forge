@@ -13,7 +13,3 @@ Four remaining insights from the M6(GPT)3 paper (the fitness GA + drums port alr
 ## [Noodle panel: MIDI + mic input into the triage pool](noodle-panel-plan.md)
 
 A panel under the generation panel where Joe's own ideas enter the pool: Web MIDI / musical-typing loop-overdub recording and mic transcription (hand-rolled YIN for voice, onset heuristics for beatbox, Spotify Basic Pitch ONNX for instruments), staged in an editable hand-rolled SVG piano roll, committed via ADD TO POOL as `source: { kind: 'recorded' }` families. Five phases, each demoable; zero new runtime npm deps.
-
-## [Mutation Bay → React Flow patch-panel canvas](mutation-bay-react-flow-plan.md)
-
-Replace the bay's hand-rolled flex/elbow-connector take trees with one shared React Flow pan/zoom canvas (ComfyUI-style): dagre LR auto-layout, one lane per part, nodes not draggable, no persisted positions — `workbench.ts` and `PartVariation` untouched. New deps `@xyflow/react` + `@dagrejs/dagre` (CLAUDE.md minimal-deps amendment). Preserves e2e selectors and the bay's keyboard contract.
